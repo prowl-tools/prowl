@@ -7,11 +7,11 @@
   "author": "Michael Tookes",
   "repository": {
     "type": "git",
-    "url": "https://github.com/michaeltookes/prowl.git"
+    "url": "https://github.com/Prowl-qa/prowl.git"
   },
-  "homepage": "https://github.com/michaeltookes/prowl#readme",
+  "homepage": "https://prowlqa.dev",
   "bugs": {
-    "url": "https://github.com/michaeltookes/prowl/issues"
+    "url": "https://github.com/Prowl-qa/prowl/issues"
   },
   "keywords": [
     "testing",
