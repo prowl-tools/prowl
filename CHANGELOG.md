@@ -4,6 +4,8 @@ All notable changes to Prowl will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-09-08
+
 ### Added
 - **`scroll` and `scrollTo` now work on the iOS and Android targets
   (PROWL-080 / ARCH-014).** Mobile hunts could not scroll below the fold: the
