@@ -146,7 +146,7 @@ jobs:
 
       # Pinned to the current codex-provider commit; repin to @v1 once a release
       # containing the codex provider (>0.3.0) ships.
-      - uses: prowl-tools/prowl-code-review@8a56424bce07b32d2374b647145a2dd0b4efc295
+      - uses: prowl-tools/prowl-code-review@e7f0431b7daf2cc818a003c5ac216f29e7da3c53
         with:
           mode: command
           # Keyless: no PROWL_AI_KEY* — auth is the runner's own `codex login`.
