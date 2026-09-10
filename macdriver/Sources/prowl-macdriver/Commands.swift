@@ -96,6 +96,16 @@ final class Session {
     private let now: () -> Date
     private let sleep: (useconds_t) -> Void
 
+    /// Drives a single wait to resolution or its deadline. Defaults to the
+    /// event-driven `AXObserver` implementation (ARCH-008); injected in tests so
+    /// the timeout/fallback semantics are exercised without a live app.
+    private let runWait: (WaitRequest) -> WaitOutcome
+
+    /// Emits a server-initiated event line (no `id`) to the client. Defaults to
+    /// writing the JSON line to stdout; a no-op in tests so waits don't write to
+    /// the real stdout.
+    private let emitEvent: ([String: Any]) -> Void
+
     /// On-screen windows in front-to-back z-order, each a raw
     /// `CGWindowListCopyWindowInfo` dictionary. Injected so `screenshot()`'s
     /// window-selection logic is unit-testable without a live window server.
@@ -133,6 +143,8 @@ final class Session {
         },
         now: @escaping () -> Date = Date.init,
         sleep: @escaping (useconds_t) -> Void = { usleep($0) },
+        runWait: @escaping (WaitRequest) -> WaitOutcome = { AXEventWaiter.run($0) },
+        emitEvent: @escaping ([String: Any]) -> Void = { writeStdoutLine($0) },
         terminationTimeout: TimeInterval = 5.0,
         listOnScreenWindows: @escaping () -> [[String: Any]] = Session.defaultListOnScreenWindows,
         runScreencapture: @escaping ([String]) throws -> Void = Session.defaultRunScreencapture
@@ -149,6 +161,8 @@ final class Session {
         self.postKeystroke = postKeystroke
         self.now = now
         self.sleep = sleep
+        self.runWait = runWait
+        self.emitEvent = emitEvent
         self.terminationTimeout = terminationTimeout
         self.listOnScreenWindows = listOnScreenWindows
         self.runScreencapture = runScreencapture
@@ -464,12 +478,32 @@ final class Session {
     func waitFor(_ queryDict: [String: Any], timeout: TimeInterval) throws -> [String: Any] {
         let app = try requireApp()
         let query = try Query.from(queryDict)
-        let deadline = Date().addingTimeInterval(timeout)
-        repeat {
-            if resolveFirst(root: app, query: query) != nil { return ["found": true] }
-            usleep(100_000)
-        } while Date() < deadline
-        throw AXFailure("timed out after \(timeout)s waiting for element")
+        let outcome = wait(cmd: "waitFor", app: app, timeout: timeout) {
+            self.resolveFirstElement(app, query) != nil
+        }
+        guard outcome.resolved else {
+            throw AXFailure("timed out after \(timeout)s waiting for element")
+        }
+        return ["found": true, "waitMode": outcome.degradedToPolling ? "polling" : "event"]
+    }
+
+    /// Run one wait through the injected wait strategy. Resolves via `AXObserver`
+    /// notifications when the app announces them, re-checking `predicate` on each,
+    /// with a slow safety re-poll underneath and a 100ms-poll fallback when AX
+    /// announces nothing (ARCH-008). Each notification during the wait is surfaced
+    /// as a server-initiated event line to the client.
+    private func wait(cmd: String, app: AXUIElement, timeout: TimeInterval, predicate: @escaping () -> Bool) -> WaitOutcome {
+        let request = WaitRequest(
+            app: app,
+            pid: runningApp?.processIdentifier ?? -1,
+            deadline: now().addingTimeInterval(timeout),
+            cmd: cmd,
+            predicate: predicate,
+            emit: { [emitEvent] name in
+                emitEvent(["event": "axNotification", "cmd": cmd, "notification": name])
+            }
+        )
+        return runWait(request)
     }
 
     /// Capture the attached app's frontmost window so `assertScreenshot`
@@ -532,14 +566,19 @@ final class Session {
             throw AXFailure("no status item found (AXExtrasMenuBar empty)")
         }
         axPress(status)
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if let menu = axChildren(status).first(where: {
+        // Menu-open detection is event-driven: an `AXMenuOpened` notification
+        // resolves this the instant the menu appears, with the poll fallback
+        // underneath for apps that don't announce it (ARCH-008).
+        var opened: AXUIElement?
+        let outcome = wait(cmd: "openMenu", app: app, timeout: timeout) {
+            guard let menu = axChildren(status).first(where: {
                 axString($0, kAXRoleAttribute as String) == "AXMenu"
-            }) {
-                return (status, menu)
-            }
-            usleep(100_000)
+            }) else { return false }
+            opened = menu
+            return true
+        }
+        if outcome.resolved, let menu = opened {
+            return (status, menu)
         }
         throw AXFailure("status-item menu did not open within \(timeout)s")
     }

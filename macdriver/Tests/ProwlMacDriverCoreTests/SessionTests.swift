@@ -429,6 +429,100 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(app.activateCallCount, 1)
     }
 
+    // MARK: - waitFor (ARCH-008 event-driven waits)
+
+    func testWaitForResolvesViaEventStrategyReportsEventMode() throws {
+        let app = FakeRunningApplication(pid: 101)
+        let workspace = FakeWorkspace()
+        workspace.runningApplicationsForBundle = { _ in [app] }
+        let target = AXUIElementCreateSystemWide()
+        var seenRequest: WaitRequest?
+        let (session, _, _) = makeSession(
+            workspace: workspace,
+            resolveFirstElement: { _, _ in target },
+            runWait: { req in
+                seenRequest = req
+                // The predicate must observe the resolved element.
+                return WaitOutcome(resolved: req.predicate(), degradedToPolling: false)
+            }
+        )
+
+        _ = try session.launch(app: "com.example.App", timeout: 1.0)
+        let result = try session.waitFor(["by": "id", "value": "ready"], timeout: 3.0)
+
+        XCTAssertEqual(result["found"] as? Bool, true)
+        XCTAssertEqual(result["waitMode"] as? String, "event")
+        XCTAssertEqual(seenRequest?.cmd, "waitFor")
+        XCTAssertEqual(seenRequest?.pid, 101)
+    }
+
+    func testWaitForReportsPollingModeWhenStrategyDegraded() throws {
+        let app = FakeRunningApplication(pid: 101)
+        let workspace = FakeWorkspace()
+        workspace.runningApplicationsForBundle = { _ in [app] }
+        let target = AXUIElementCreateSystemWide()
+        let (session, _, _) = makeSession(
+            workspace: workspace,
+            resolveFirstElement: { _, _ in target },
+            runWait: { _ in WaitOutcome(resolved: true, degradedToPolling: true) }
+        )
+
+        _ = try session.launch(app: "com.example.App", timeout: 1.0)
+        let result = try session.waitFor(["by": "id", "value": "ready"], timeout: 3.0)
+
+        XCTAssertEqual(result["found"] as? Bool, true)
+        XCTAssertEqual(result["waitMode"] as? String, "polling")
+    }
+
+    func testWaitForThrowsAtDeadlineWhenNeverResolved() throws {
+        let app = FakeRunningApplication(pid: 101)
+        let workspace = FakeWorkspace()
+        workspace.runningApplicationsForBundle = { _ in [app] }
+        let (session, _, _) = makeSession(
+            workspace: workspace,
+            resolveFirstElement: { _, _ in nil },
+            runWait: { req in WaitOutcome(resolved: req.predicate(), degradedToPolling: false) }
+        )
+
+        _ = try session.launch(app: "com.example.App", timeout: 1.0)
+
+        XCTAssertThrowsError(try session.waitFor(["by": "id", "value": "never"], timeout: 2.5)) { error in
+            guard let failure = error as? AXFailure else {
+                return XCTFail("expected AXFailure, got \(error)")
+            }
+            XCTAssertTrue(failure.message.contains("timed out after 2.5s waiting for element"))
+        }
+    }
+
+    func testWaitForEmitsServerInitiatedNotificationEvents() throws {
+        let app = FakeRunningApplication(pid: 101)
+        let workspace = FakeWorkspace()
+        workspace.runningApplicationsForBundle = { _ in [app] }
+        let target = AXUIElementCreateSystemWide()
+        var emitted: [[String: Any]] = []
+        let (session, _, _) = makeSession(
+            workspace: workspace,
+            resolveFirstElement: { _, _ in target },
+            runWait: { req in
+                // Simulate a notification arriving mid-wait, then resolution.
+                req.emit("AXFocusedUIElementChanged")
+                return WaitOutcome(resolved: req.predicate(), degradedToPolling: false)
+            },
+            emitEvent: { emitted.append($0) }
+        )
+
+        _ = try session.launch(app: "com.example.App", timeout: 1.0)
+        _ = try session.waitFor(["by": "id", "value": "ready"], timeout: 3.0)
+
+        XCTAssertEqual(emitted.count, 1)
+        XCTAssertEqual(emitted.first?["event"] as? String, "axNotification")
+        XCTAssertEqual(emitted.first?["cmd"] as? String, "waitFor")
+        XCTAssertEqual(emitted.first?["notification"] as? String, "AXFocusedUIElementChanged")
+        // Event lines are distinct from id-matched responses: never carry an `id`.
+        XCTAssertNil(emitted.first?["id"])
+        XCTAssertNil(emitted.first?["ok"])
+    }
+
     private func makeSession(
         workspace: FakeWorkspace,
         menuController: FakeStatusMenuController = FakeStatusMenuController(result: true),
@@ -441,7 +535,11 @@ final class SessionTests: XCTestCase {
         supportsAction: @escaping (AXUIElement, String) throws -> Bool = { _, _ in false },
         performPressAction: @escaping (AXUIElement) -> AXError = { _ in .success },
         focusElement: @escaping (AXUIElement) -> AXError = { _ in .success },
-        postKeystroke: @escaping (Keystroke, pid_t) throws -> Void = { _, _ in }
+        postKeystroke: @escaping (Keystroke, pid_t) throws -> Void = { _, _ in },
+        runWait: @escaping (WaitRequest) -> WaitOutcome = { req in
+            WaitOutcome(resolved: req.predicate(), degradedToPolling: false)
+        },
+        emitEvent: @escaping ([String: Any]) -> Void = { _ in }
     ) -> (Session, ManualClock, FakeStatusMenuController) {
         let clock = ManualClock()
         let session = Session(
@@ -457,6 +555,8 @@ final class SessionTests: XCTestCase {
             postKeystroke: postKeystroke,
             now: clock.now,
             sleep: clock.sleep,
+            runWait: runWait,
+            emitEvent: emitEvent,
             terminationTimeout: terminationTimeout,
             listOnScreenWindows: listOnScreenWindows,
             runScreencapture: runScreencapture
