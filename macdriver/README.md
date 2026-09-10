@@ -95,6 +95,29 @@ Verbs: `check`, `launch`, `activate`, `quit`, `count`, `text`, `click`, `fill`,
 `statusItems`, `windows`, `openMenu`, `closeMenu`, `clickMenu`, `tree`,
 `shutdown`.
 
+### Server-initiated events (ARCH-008)
+
+Alongside id-matched responses, `serve` may write **event lines**: a JSON object
+with an `event` discriminant and **no `id`**. They are informational — a wait is
+still resolved by its id-matched response — so a client routes them out-of-band
+and never matches them against its pending-request map.
+
+The event-driven waits (`waitFor` and menu-open detection in
+`openMenu`/`clickMenu`) subscribe to the attached app's `AXObserver`
+notifications and emit one event line per notification received during the wait:
+
+```text
+→ {"id":7,"cmd":"waitFor","query":{"by":"id","value":"ready"},"timeout":10}
+← {"event":"axNotification","cmd":"waitFor","notification":"AXMenuOpened"}
+← {"id":7,"ok":true,"result":{"found":true,"waitMode":"event"}}
+```
+
+Waits do one immediate check, then resolve the instant a notification shows the
+predicate is satisfied, with a slow safety re-poll underneath. Each notification
+registration is best-effort; when the app announces none, the wait degrades to
+the classic 100ms poll and reports `"waitMode":"polling"`. The timeout is
+unchanged — a wait that never resolves still errors at its deadline.
+
 ## Lineage
 
 Promoted from the `spikes/macdriver/axspike` proof of concept, which validated

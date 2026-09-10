@@ -4,6 +4,18 @@ All notable changes to Prowl will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **Faster, event-driven waits on the macOS target (PROWL-056 / ARCH-008).**
+  The `prowl-macdriver` helper no longer waits by polling on a fixed 100ms tick:
+  `waitFor` and the menu-open detection behind `openMenu`/`clickMenu` now
+  subscribe to the app's macOS accessibility notifications (`AXObserver`) and
+  resolve the instant the UI actually changes, with a slow safety re-poll kept
+  underneath for elements the app never announces. Hunt semantics are unchanged —
+  same steps, same results, same timeout behavior (a wait that never resolves
+  still errors at its deadline) — just lower latency and fewer timing races. When
+  an app announces no usable notifications the wait automatically falls back to
+  the previous polling behavior. The macOS target stays experimental.
+
 ## [0.1.8] - 2026-09-08
 
 ### Added
