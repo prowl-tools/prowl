@@ -89,6 +89,10 @@ final class Session {
     private let createApplication: (pid_t) -> AXUIElement
     private let setMessagingTimeout: (AXUIElement, TimeInterval) -> Void
     private let resolveFirstElement: (AXUIElement, Query) -> AXUIElement?
+    private let statusItemsForApp: (AXUIElement) -> [AXUIElement]
+    private let childrenOfElement: (AXUIElement) -> [AXUIElement]
+    private let stringAttribute: (AXUIElement, String) -> String?
+    private let elementInfo: (AXUIElement) -> [String: Any]
     private let supportsAction: (AXUIElement, String) throws -> Bool
     private let performPressAction: (AXUIElement) -> AXError
     private let focusElement: (AXUIElement) -> AXError
@@ -133,6 +137,10 @@ final class Session {
         resolveFirstElement: @escaping (AXUIElement, Query) -> AXUIElement? = { root, query in
             resolveFirst(root: root, query: query)
         },
+        statusItems: @escaping (AXUIElement) -> [AXUIElement] = axStatusItems,
+        children: @escaping (AXUIElement) -> [AXUIElement] = axChildren,
+        stringAttribute: @escaping (AXUIElement, String) -> String? = axString,
+        elementInfo: @escaping (AXUIElement) -> [String: Any] = axInfo,
         supportsAction: @escaping (AXUIElement, String) throws -> Bool = axSupportsAction,
         performPressAction: @escaping (AXUIElement) -> AXError = axPress,
         focusElement: @escaping (AXUIElement) -> AXError = { element in
@@ -155,6 +163,10 @@ final class Session {
         self.createApplication = createApplication
         self.setMessagingTimeout = setMessagingTimeout
         self.resolveFirstElement = resolveFirstElement
+        self.statusItemsForApp = statusItems
+        self.childrenOfElement = children
+        self.stringAttribute = stringAttribute
+        self.elementInfo = elementInfo
         self.supportsAction = supportsAction
         self.performPressAction = performPressAction
         self.focusElement = focusElement
@@ -552,7 +564,7 @@ final class Session {
 
     func statusItems() throws -> [String: Any] {
         let app = try requireApp()
-        return ["items": axStatusItems(app).map(axInfo)]
+        return ["items": statusItemsForApp(app).map(elementInfo)]
     }
 
     func windows() throws -> [String: Any] {
@@ -562,17 +574,17 @@ final class Session {
 
     private func openStatusMenu(timeout: TimeInterval) throws -> (status: AXUIElement, menu: AXUIElement) {
         let app = try requireApp()
-        guard let status = axStatusItems(app).first else {
+        guard let status = statusItemsForApp(app).first else {
             throw AXFailure("no status item found (AXExtrasMenuBar empty)")
         }
-        axPress(status)
+        _ = performPressAction(status)
         // Menu-open detection is event-driven: an `AXMenuOpened` notification
         // resolves this the instant the menu appears, with the poll fallback
         // underneath for apps that don't announce it (ARCH-008).
         var opened: AXUIElement?
         let outcome = wait(cmd: "openMenu", app: app, timeout: timeout) {
-            guard let menu = axChildren(status).first(where: {
-                axString($0, kAXRoleAttribute as String) == "AXMenu"
+            guard let menu = self.childrenOfElement(status).first(where: {
+                self.stringAttribute($0, kAXRoleAttribute as String) == "AXMenu"
             }) else { return false }
             opened = menu
             return true
@@ -585,7 +597,7 @@ final class Session {
 
     func openMenu(timeout: TimeInterval) throws -> [String: Any] {
         let (_, menu) = try openStatusMenu(timeout: timeout)
-        return ["items": axChildren(menu).map(axInfo)]
+        return ["items": childrenOfElement(menu).map(elementInfo)]
     }
 
     func closeMenu() throws -> [String: Any] {
@@ -595,15 +607,15 @@ final class Session {
 
     func clickMenu(title: String, timeout: TimeInterval) throws -> [String: Any] {
         let (_, menu) = try openStatusMenu(timeout: timeout)
-        let items = axChildren(menu)
+        let items = childrenOfElement(menu)
         let exact = items.first {
-            axString($0, kAXTitleAttribute as String)?.caseInsensitiveCompare(title) == .orderedSame
+            stringAttribute($0, kAXTitleAttribute as String)?.caseInsensitiveCompare(title) == .orderedSame
         }
         guard let target = exact ?? items.first(where: {
-            (axString($0, kAXTitleAttribute as String) ?? "").localizedCaseInsensitiveContains(title)
+            (stringAttribute($0, kAXTitleAttribute as String) ?? "").localizedCaseInsensitiveContains(title)
         }) else {
             _ = try? closeMenu()
-            let available = items.compactMap { axString($0, kAXTitleAttribute as String) }
+            let available = items.compactMap { stringAttribute($0, kAXTitleAttribute as String) }
             throw AXFailure("no menu item matching \"\(title)\"; items: \(available)")
         }
         if axBool(target, kAXEnabledAttribute as String) == false {
@@ -615,7 +627,7 @@ final class Session {
             _ = try? closeMenu()
             throw AXFailure("AXPress failed on \"\(title)\" (\(error.rawValue))")
         }
-        return ["clicked": axString(target, kAXTitleAttribute as String) ?? title]
+        return ["clicked": stringAttribute(target, kAXTitleAttribute as String) ?? title]
     }
 
     func tree(depth: Int) throws -> [String: Any] {
