@@ -13,6 +13,7 @@ import { buildHistoryCommand } from "./commands/history.js";
 import { buildFlakyCommand } from "./commands/flaky.js";
 import { buildMcpCommand } from "./commands/mcp.js";
 import { buildMacdriverCommand } from "./commands/macdriver.js";
+import { buildDoctorCommand } from "./commands/doctor.js";
 
 export const CLI_VERSION = pkg.version;
 
@@ -37,6 +38,7 @@ export function buildProgram(): Command {
   program.addCommand(buildFlakyCommand());
   program.addCommand(buildMcpCommand());
   program.addCommand(buildMacdriverCommand());
+  program.addCommand(buildDoctorCommand());
 
   return program;
 }
