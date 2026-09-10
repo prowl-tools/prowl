@@ -13,6 +13,7 @@ final class AXEventWaiterTests: XCTestCase {
         private(set) var teardownCount = 0
         private(set) var pumpCount = 0
         private(set) var sleepCount = 0
+        private(set) var sleepMicros: [useconds_t] = []
         var registeredNotifications = 0
 
         init(timeout: TimeInterval) {
@@ -35,6 +36,7 @@ final class AXEventWaiterTests: XCTestCase {
 
         func sleep(_ micros: useconds_t) {
             sleepCount += 1
+            sleepMicros.append(micros)
             current = current.addingTimeInterval(Double(micros) / 1_000_000)
         }
     }
@@ -144,5 +146,23 @@ final class AXEventWaiterTests: XCTestCase {
         // tail sleep can round the count up, but the deadline is always honored).
         XCTAssertGreaterThanOrEqual(h.sleepCount, 3)
         XCTAssertGreaterThanOrEqual(h.current, h.deadline)
+    }
+
+    func testPollingModeCapsLongDeadlineBeforeConvertingToUseconds() {
+        let h = Harness(timeout: 5_000)
+        h.registeredNotifications = 0
+        let outcome = AXEventWaiter.drive(
+            deadline: h.deadline,
+            predicate: { h.sleepCount > 0 },
+            now: h.now,
+            registerObserver: h.register,
+            teardown: h.teardown,
+            pumpEvents: h.pump,
+            fallbackSleep: h.sleep
+        )
+        XCTAssertTrue(outcome.resolved)
+        XCTAssertTrue(outcome.degradedToPolling)
+        XCTAssertEqual(h.sleepMicros, [AXEventWaiter.fallbackPollMicros])
+        XCTAssertEqual(h.pumpCount, 0)
     }
 }

@@ -308,9 +308,10 @@ unreleased). Priorities should be re-ordered by dogfood feedback from the first 
 (Sentwise menu bar app, `prowl-hunts` branch in that repo). Phase 1 scope notes live in
 `resolved.md` under PROWL-048.
 
-**Epic status (2026-09-10, {PROWL-056} shipped): ACTIVE** — the core beachhead epic. The
-remaining epic item, {PROWL-052} (helper distribution), is code-complete and owner-gated: its
-go-live waits on {PROWL-079}. No open code items remain in this epic.
+**Epic status (2026-09-10, {PROWL-056} code-complete on branch): ACTIVE** — the core beachhead
+epic. {PROWL-056} is pending PR merge and release. The remaining epic item, {PROWL-052}
+(helper distribution), is code-complete and owner-gated: its go-live waits on {PROWL-079}. No
+open code items remain in this epic.
 
 {PROWL-052} **ARCH-006: Distribute the `prowl-macdriver` helper**
    The macOS target currently requires a source checkout and local `swift build`. Ship the

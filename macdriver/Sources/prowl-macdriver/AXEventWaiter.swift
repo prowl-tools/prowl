@@ -118,7 +118,9 @@ enum AXEventWaiter {
             let remaining = deadline.timeIntervalSince(now())
             if remaining <= 0 { break }
             if degraded {
-                let cappedMicros = min(fallbackPollMicros, useconds_t(remaining * 1_000_000))
+                let cappedMicros = useconds_t(
+                    min(Double(fallbackPollMicros), remaining * 1_000_000)
+                )
                 fallbackSleep(max(cappedMicros, 1))
             } else {
                 pumpEvents(min(safetyPollInterval, remaining))

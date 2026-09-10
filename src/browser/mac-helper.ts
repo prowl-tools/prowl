@@ -126,7 +126,16 @@ export type SpawnMacHelperOptions = {
    * pending-request map.
    */
   onEvent?: (event: MacHelperEvent) => void;
+  /**
+   * Optional diagnostic sink for event handler failures. Defaults to stderr so a
+   * bad sink is visible without allowing it to break helper transport.
+   */
+  onEventError?: (message: string) => void;
 };
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 /** A {@link MacHelperClient} backed by a spawned `prowl-macdriver serve` process. */
 export class SpawnMacHelperClient implements MacHelperClient {
@@ -134,6 +143,7 @@ export class SpawnMacHelperClient implements MacHelperClient {
   private readonly pending = new Map<number, Pending>();
   private readonly requestTimeoutMs: number;
   private readonly onEvent?: (event: MacHelperEvent) => void;
+  private readonly onEventError: (message: string) => void;
   private stdoutBuffer = "";
   private stderrBuffer = "";
   private nextId = 1;
@@ -143,6 +153,7 @@ export class SpawnMacHelperClient implements MacHelperClient {
   constructor(binaryPath: string, options: SpawnMacHelperOptions = {}) {
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     this.onEvent = options.onEvent;
+    this.onEventError = options.onEventError ?? ((message) => process.stderr.write(`${message}\n`));
     this.child = spawn(binaryPath, ["serve"], { stdio: ["pipe", "pipe", "pipe"] });
     this.child.stdout?.setEncoding("utf-8");
     this.child.stderr?.setEncoding("utf-8");
@@ -208,8 +219,15 @@ export class SpawnMacHelperClient implements MacHelperClient {
   private handleEvent(event: MacHelperEvent): void {
     try {
       this.onEvent?.(event);
-    } catch {
+    } catch (error) {
       // A misbehaving event sink must never break the transport.
+      try {
+        this.onEventError(
+          `prowl-macdriver event sink failed for event "${event.event}": ${errorMessage(error)}`
+        );
+      } catch {
+        // Diagnostic sinks are isolated for the same reason as event sinks.
+      }
     }
   }
 

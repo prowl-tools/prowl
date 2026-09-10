@@ -265,20 +265,25 @@ describe("SpawnMacHelperClient event routing (ARCH-008)", () => {
     }
   });
 
-  it("survives an event sink that throws", async () => {
+  it("reports and survives an event sink that throws", async () => {
     const scriptPath = writeReplayScript([
       '{"event":"axNotification","notification":"AXUIElementDestroyed"}',
       '{"ok":true,"result":{"found":true},"id":1}'
     ]);
+    const diagnostics: string[] = [];
     const client = new SpawnMacHelperClient(scriptPath, {
       requestTimeoutMs: 2000,
       onEvent: () => {
         throw new Error("sink boom");
-      }
+      },
+      onEventError: (message) => diagnostics.push(message)
     });
     try {
       await expect(client.request("waitFor")).resolves.toEqual({ found: true });
       expect(client.pendingCount).toBe(0);
+      expect(diagnostics).toEqual([
+        'prowl-macdriver event sink failed for event "axNotification": sink boom'
+      ]);
     } finally {
       await client.close();
       fs.rmSync(path.dirname(scriptPath), { recursive: true, force: true });

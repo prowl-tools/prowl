@@ -14,7 +14,10 @@ All notable changes to Prowl will be documented in this file.
   same steps, same results, same timeout behavior (a wait that never resolves
   still errors at its deadline) — just lower latency and fewer timing races. When
   an app announces no usable notifications the wait automatically falls back to
-  the previous polling behavior. The macOS target stays experimental.
+  the previous polling behavior, with long fallback deadlines capped before the
+  helper converts them to `useconds_t`. Event-sink failures are reported through
+  an isolated diagnostic path and cannot break the helper transport. The macOS
+  target stays experimental.
 
 ## [0.1.8] - 2026-09-08
 
