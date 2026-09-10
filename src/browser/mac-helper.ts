@@ -108,16 +108,42 @@ type Pending = {
 /** Default per-request deadline for the helper transport. */
 export const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 
+/**
+ * A server-initiated event line from the helper (ARCH-008): a JSON object with
+ * an `event` discriminant and **no** `id`, so it is unambiguously distinct from
+ * an id-matched command response. Emitted, for example, when an AXObserver
+ * notification fires during a `waitFor`/`openMenu` wait.
+ */
+export type MacHelperEvent = Record<string, unknown> & { event: string };
+
 export type SpawnMacHelperOptions = {
   /** Per-request deadline; a request that gets no response by then rejects. */
   requestTimeoutMs?: number;
+  /**
+   * Optional sink for server-initiated event lines. Events are informational —
+   * waits are resolved helper-side by the id-matched response — so they are
+   * forwarded here (if provided) and otherwise dropped, never touching the
+   * pending-request map.
+   */
+  onEvent?: (event: MacHelperEvent) => void;
+  /**
+   * Optional diagnostic sink for event handler failures. Defaults to stderr so a
+   * bad sink is visible without allowing it to break helper transport.
+   */
+  onEventError?: (message: string) => void;
 };
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 /** A {@link MacHelperClient} backed by a spawned `prowl-macdriver serve` process. */
 export class SpawnMacHelperClient implements MacHelperClient {
   private readonly child: ChildProcess;
   private readonly pending = new Map<number, Pending>();
   private readonly requestTimeoutMs: number;
+  private readonly onEvent?: (event: MacHelperEvent) => void;
+  private readonly onEventError: (message: string) => void;
   private stdoutBuffer = "";
   private stderrBuffer = "";
   private nextId = 1;
@@ -126,6 +152,8 @@ export class SpawnMacHelperClient implements MacHelperClient {
 
   constructor(binaryPath: string, options: SpawnMacHelperOptions = {}) {
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.onEvent = options.onEvent;
+    this.onEventError = options.onEventError ?? ((message) => process.stderr.write(`${message}\n`));
     this.child = spawn(binaryPath, ["serve"], { stdio: ["pipe", "pipe", "pipe"] });
     this.child.stdout?.setEncoding("utf-8");
     this.child.stderr?.setEncoding("utf-8");
@@ -164,6 +192,13 @@ export class SpawnMacHelperClient implements MacHelperClient {
     } catch {
       return; // ignore non-JSON noise
     }
+    // Server-initiated event (ARCH-008): an `event` discriminant with no numeric
+    // `id`. Route it out-of-band so it never collides with the pending-request
+    // map, which is keyed by id and owns id-matched command responses only.
+    if (typeof message.event === "string" && typeof message.id !== "number") {
+      this.handleEvent(message as MacHelperEvent);
+      return;
+    }
     const id = typeof message.id === "number" ? message.id : undefined;
     if (id === undefined) {
       return;
@@ -178,6 +213,21 @@ export class SpawnMacHelperClient implements MacHelperClient {
       pending.resolve((message.result as Record<string, unknown>) ?? {});
     } else {
       pending.reject(new Error(typeof message.error === "string" ? message.error : "prowl-macdriver error"));
+    }
+  }
+
+  private handleEvent(event: MacHelperEvent): void {
+    try {
+      this.onEvent?.(event);
+    } catch (error) {
+      // A misbehaving event sink must never break the transport.
+      try {
+        this.onEventError(
+          `prowl-macdriver event sink failed for event "${event.event}": ${errorMessage(error)}`
+        );
+      } catch {
+        // Diagnostic sinks are isolated for the same reason as event sinks.
+      }
     }
   }
 
