@@ -11,6 +11,7 @@ import {
   SpawnMacHelperClient
 } from "../src/browser/mac-helper.js";
 import type { MacHelperClient } from "../src/browser/mac-driver.js";
+import type { MacHelperEvent } from "../src/browser/mac-helper.js";
 import { MACDRIVER_VERSION, macdriverInstalledBinary } from "../src/browser/macdriver-release.js";
 import { executeSteps } from "../src/runner/steps.js";
 import type { Step } from "../src/types/index.js";
@@ -176,6 +177,108 @@ describe("SpawnMacHelperClient request timeout", () => {
       await expect(client.request("click")).rejects.toThrow(
         "prowl-macdriver exited unexpectedly (code 7): fatal helper"
       );
+    } finally {
+      await client.close();
+      fs.rmSync(path.dirname(scriptPath), { recursive: true, force: true });
+    }
+  });
+});
+
+describe("SpawnMacHelperClient event routing (ARCH-008)", () => {
+  // A stand-in helper that, on each request line, writes the given raw stdout
+  // lines (events, noise, and the id-matched response, in order) then idles so
+  // the client can shut it down cleanly. `LINES` is substituted at write time.
+  function writeReplayScript(lines: string[]): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-events-"));
+    const scriptPath = path.join(dir, "replay.sh");
+    const emit = lines.map((line) => `printf '%s\\n' ${JSON.stringify(line)}`).join("\n");
+    fs.writeFileSync(scriptPath, `#!/bin/sh\nread line\n${emit}\ncat >/dev/null\n`);
+    fs.chmodSync(scriptPath, 0o755);
+    return scriptPath;
+  }
+
+  it("delivers an interleaved event without corrupting the id-matched response", async () => {
+    // Event line arrives BEFORE the response for the same in-flight request.
+    const scriptPath = writeReplayScript([
+      '{"event":"axNotification","cmd":"waitFor","notification":"AXMenuOpened"}',
+      '{"ok":true,"result":{"found":true,"waitMode":"event"},"id":1}'
+    ]);
+    const events: MacHelperEvent[] = [];
+    const client = new SpawnMacHelperClient(scriptPath, {
+      requestTimeoutMs: 2000,
+      onEvent: (event) => events.push(event)
+    });
+    try {
+      const result = await client.request("waitFor", { query: { by: "id", value: "ready" } });
+      expect(result).toEqual({ found: true, waitMode: "event" });
+      expect(client.pendingCount).toBe(0);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        event: "axNotification",
+        cmd: "waitFor",
+        notification: "AXMenuOpened"
+      });
+    } finally {
+      await client.close();
+      fs.rmSync(path.dirname(scriptPath), { recursive: true, force: true });
+    }
+  });
+
+  it("ignores malformed event noise and still resolves the response", async () => {
+    // A burst: valid event, malformed JSON, a no-id non-event object, then the
+    // response. Only the valid event is surfaced; the response still resolves.
+    const scriptPath = writeReplayScript([
+      '{"event":"axNotification","notification":"AXValueChanged"}',
+      "{ this is not json",
+      '{"noise":true}',
+      '{"ok":true,"result":{"found":true},"id":1}'
+    ]);
+    const events: MacHelperEvent[] = [];
+    const client = new SpawnMacHelperClient(scriptPath, {
+      requestTimeoutMs: 2000,
+      onEvent: (event) => events.push(event)
+    });
+    try {
+      const result = await client.request("waitFor");
+      expect(result).toEqual({ found: true });
+      expect(client.pendingCount).toBe(0);
+      expect(events).toHaveLength(1);
+      expect(events[0].notification).toBe("AXValueChanged");
+    } finally {
+      await client.close();
+      fs.rmSync(path.dirname(scriptPath), { recursive: true, force: true });
+    }
+  });
+
+  it("does not require an event sink — events are dropped when none is set", async () => {
+    const scriptPath = writeReplayScript([
+      '{"event":"axNotification","notification":"AXWindowCreated"}',
+      '{"ok":true,"result":{"found":true},"id":1}'
+    ]);
+    const client = new SpawnMacHelperClient(scriptPath, { requestTimeoutMs: 2000 });
+    try {
+      await expect(client.request("waitFor")).resolves.toEqual({ found: true });
+      expect(client.pendingCount).toBe(0);
+    } finally {
+      await client.close();
+      fs.rmSync(path.dirname(scriptPath), { recursive: true, force: true });
+    }
+  });
+
+  it("survives an event sink that throws", async () => {
+    const scriptPath = writeReplayScript([
+      '{"event":"axNotification","notification":"AXUIElementDestroyed"}',
+      '{"ok":true,"result":{"found":true},"id":1}'
+    ]);
+    const client = new SpawnMacHelperClient(scriptPath, {
+      requestTimeoutMs: 2000,
+      onEvent: () => {
+        throw new Error("sink boom");
+      }
+    });
+    try {
+      await expect(client.request("waitFor")).resolves.toEqual({ found: true });
+      expect(client.pendingCount).toBe(0);
     } finally {
       await client.close();
       fs.rmSync(path.dirname(scriptPath), { recursive: true, force: true });
