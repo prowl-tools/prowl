@@ -30,6 +30,51 @@ function copyFile(source: string, destination: string): void {
   fs.copyFileSync(source, destination);
 }
 
+/**
+ * Scaffold a `.prowl/` directory under `root` from the package's bundled
+ * `examples/` templates: `config.yml`, the starter hunts, and a `.gitignore`
+ * that keeps run artifacts and secrets out of version control. This is the
+ * single code path both `prowl init` and `prowl doctor --fix` use so the
+ * templates are never duplicated. Throws (rather than exiting) when the bundled
+ * examples are missing, so callers can decide how to surface the failure.
+ */
+export function scaffoldProwlDir(root: string): void {
+  const prowlDir = path.join(root, CONFIG_DIR);
+
+  const packageRoot = getPackageRoot();
+  const examplesDir = path.join(packageRoot, "examples");
+  const exampleConfig = path.join(examplesDir, "config.yml");
+  const exampleHuntsDir = path.join(examplesDir, "hunts");
+
+  if (!fs.existsSync(exampleConfig) || !fs.existsSync(exampleHuntsDir)) {
+    throw new Error("Examples not found in package. Reinstall prowl-tools.");
+  }
+
+  copyFile(exampleConfig, path.join(prowlDir, "config.yml"));
+
+  const huntFiles = fs.readdirSync(exampleHuntsDir).filter((f) => f.endsWith(".yml"));
+  for (const huntFile of huntFiles) {
+    copyFile(
+      path.join(exampleHuntsDir, huntFile),
+      path.join(prowlDir, "hunts", huntFile)
+    );
+  }
+
+  // Create .gitignore to keep artifacts and secrets out of version control
+  const gitignore = [
+    "# Run artifacts (screenshots, logs, reports)",
+    "runs/",
+    "",
+    "# Auth state (tokens, cookies)",
+    "auth-state.json",
+    "",
+    "# Environment variables (credentials)",
+    ".env",
+    "",
+  ].join("\n");
+  fs.writeFileSync(path.join(prowlDir, ".gitignore"), gitignore);
+}
+
 export function buildInitCommand(): Command {
   const command = new Command("init")
     .option("--force", `Overwrite existing ${CONFIG_DIR} directory`)
@@ -46,40 +91,13 @@ export function buildInitCommand(): Command {
         return;
       }
 
-      const packageRoot = getPackageRoot();
-      const examplesDir = path.join(packageRoot, "examples");
-      const exampleConfig = path.join(examplesDir, "config.yml");
-      const exampleHuntsDir = path.join(examplesDir, "hunts");
-
-      if (!fs.existsSync(exampleConfig) || !fs.existsSync(exampleHuntsDir)) {
-        console.error(chalk.red("Examples not found in package. Reinstall prowl-tools."));
+      try {
+        scaffoldProwlDir(root);
+      } catch (error) {
+        console.error(chalk.red(error instanceof Error ? error.message : "init failed"));
         process.exitCode = 1;
         return;
       }
-
-      copyFile(exampleConfig, path.join(prowlDir, "config.yml"));
-
-      const huntFiles = fs.readdirSync(exampleHuntsDir).filter((f) => f.endsWith(".yml"));
-      for (const huntFile of huntFiles) {
-        copyFile(
-          path.join(exampleHuntsDir, huntFile),
-          path.join(prowlDir, "hunts", huntFile)
-        );
-      }
-
-      // Create .gitignore to keep artifacts and secrets out of version control
-      const gitignore = [
-        "# Run artifacts (screenshots, logs, reports)",
-        "runs/",
-        "",
-        "# Auth state (tokens, cookies)",
-        "auth-state.json",
-        "",
-        "# Environment variables (credentials)",
-        ".env",
-        "",
-      ].join("\n");
-      fs.writeFileSync(path.join(prowlDir, ".gitignore"), gitignore);
 
       console.log(welcomeBanner());
       console.log(chalk.green(`  Initialized ${CONFIG_DIR} directory.`));
