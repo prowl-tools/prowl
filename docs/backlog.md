@@ -308,9 +308,9 @@ unreleased). Priorities should be re-ordered by dogfood feedback from the first 
 (Sentwise menu bar app, `prowl-hunts` branch in that repo). Phase 1 scope notes live in
 `resolved.md` under PROWL-048.
 
-**Epic status (2026-09-03, {PROWL-051} shipped): ACTIVE** — the core beachhead epic. Next code
-item: {PROWL-056}. {PROWL-052}'s go-live is gated
-on {PROWL-079}.
+**Epic status (2026-09-10, {PROWL-056} shipped): ACTIVE** — the core beachhead epic. The
+remaining epic item, {PROWL-052} (helper distribution), is code-complete and owner-gated: its
+go-live waits on {PROWL-079}. No open code items remain in this epic.
 
 {PROWL-052} **ARCH-006: Distribute the `prowl-macdriver` helper**
    The macOS target currently requires a source checkout and local `swift build`. Ship the
@@ -338,25 +338,6 @@ tarball stays JS-only. **Remains (owner)**: provision the signing secrets
 a notarized binary installs cleanly — until then `install` 404s by design.
 Homebrew formula for the helper not pursued (npm install path covers it). The
 signing-identity prerequisite chain is tracked as {PROWL-079}.
-
-{PROWL-056} **ARCH-008: Event-driven AX waits via AXObserver (BiDi lesson applied to macdriver)**
-   The Swift helper is a classic command/poll design: `waitFor` loops on 100ms sleeps, menu-open
-detection polls children. The WebDriver BiDi insight — UIs are event-driven, and protocols that
-poll them breed timing races — applies verbatim: macOS's `AXObserver` API pushes notifications
-(`AXWindowCreated`, `AXUIElementDestroyed`, focus/value changes) that the helper could subscribe
-to instead. Waits resolve the instant the state changes, with less CPU and structurally fewer
-race windows of the BUG-MAC-001 kind. Lower priority than {PROWL-049}/{PROWL-052}: today's
-polling is correct, just less elegant.
-
-**Found during**: WebDriver BiDi spec review (2026-08-16)
-**Acceptance Criteria**:
-- Helper registers `AXObserver` notifications for the attached app and resolves `waitFor` (and
-  menu-open detection in `openMenu`/`clickMenu`) from notifications, with the existing polling
-  retained as fallback for elements/notifications AX doesn't announce
-- Stdio protocol gains server-initiated event messages (distinct from id-matched responses);
-  `SpawnMacHelperClient` routes them without confusing the pending-request map
-- No behavior change to hunt semantics — same steps, same results, lower latency
-- Timeout behavior preserved exactly (a wait that never resolves still errors at its deadline)
 
 
 ## Mobile Target (Epic)
