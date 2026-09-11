@@ -25,6 +25,16 @@ describe("prowl init", () => {
     cmd.parse(["node", "prowl", ...args]);
   }
 
+  function failDestinationHuntCopies(prowlDir: string) {
+    const copyFileSync = fs.copyFileSync;
+    return vi.spyOn(fs, "copyFileSync").mockImplementation((source, destination, mode) => {
+      if (String(destination).startsWith(path.join(prowlDir, "hunts") + path.sep)) {
+        throw new Error("destination copy failed");
+      }
+      copyFileSync(source, destination, mode);
+    });
+  }
+
   it("creates .prowl directory with config, example hunt, and .gitignore", () => {
     runInit();
 
@@ -161,6 +171,47 @@ describe("prowl init", () => {
       expect(() => scaffoldProwlDir(tempDir)).toThrow("copy failed");
       expect(fs.existsSync(path.join(tempDir, ".prowl"))).toBe(false);
     } finally {
+      copySpy.mockRestore();
+    }
+  });
+
+  it("removes a partial .prowl/ when destination copying fails", () => {
+    const prowlDir = path.join(tempDir, ".prowl");
+    const copySpy = failDestinationHuntCopies(prowlDir);
+
+    try {
+      expect(() => scaffoldProwlDir(tempDir)).toThrow("destination copy failed");
+      expect(fs.existsSync(prowlDir)).toBe(false);
+    } finally {
+      copySpy.mockRestore();
+    }
+  });
+
+  it("restores existing .prowl/ files when destination copying fails under --force", () => {
+    runInit();
+
+    const prowlDir = path.join(process.cwd(), ".prowl");
+    const configPath = path.join(prowlDir, "config.yml");
+    fs.writeFileSync(configPath, "user config");
+    const userFile = path.join(prowlDir, "my-notes.txt");
+    fs.writeFileSync(userFile, "user data");
+
+    const originalExitCode = process.exitCode;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const copySpy = failDestinationHuntCopies(prowlDir);
+
+    try {
+      process.exitCode = undefined;
+      runInit(["--force"]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("destination copy failed"));
+      expect(fs.existsSync(prowlDir)).toBe(true);
+      expect(fs.readFileSync(configPath, "utf-8")).toBe("user config");
+      expect(fs.readFileSync(userFile, "utf-8")).toBe("user data");
+    } finally {
+      process.exitCode = originalExitCode;
+      errorSpy.mockRestore();
       copySpy.mockRestore();
     }
   });

@@ -12,6 +12,19 @@ interface StagedTemplateFile {
   relativePath: string;
 }
 
+interface DestinationBackup {
+  destination: string;
+  backup: string;
+}
+
+interface DestinationRollback {
+  prowlDirExisted: boolean;
+  backupDir: string;
+  backups: DestinationBackup[];
+  createdFiles: string[];
+  createdDirs: string[];
+}
+
 function getPackageRoot(): string {
   const currentFile = fileURLToPath(import.meta.url);
   let dir = path.dirname(currentFile);
@@ -34,6 +47,11 @@ function getPackageRoot(): string {
 function copyFile(source: string, destination: string): void {
   fs.mkdirSync(path.dirname(destination), { recursive: true });
   fs.copyFileSync(source, destination);
+}
+
+function isInsideDir(parent: string, child: string): boolean {
+  const relative = path.relative(parent, child);
+  return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
 function gitignoreTemplate(): string {
@@ -77,6 +95,74 @@ function stageScaffoldTemplates(examplesDir: string): { stageDir: string; files:
   }
 }
 
+function trackCreatedParentDirs(destination: string, prowlDir: string, createdDirs: Set<string>): void {
+  let dir = path.dirname(destination);
+  while (isInsideDir(prowlDir, dir) && !fs.existsSync(dir)) {
+    createdDirs.add(dir);
+    dir = path.dirname(dir);
+  }
+}
+
+function prepareDestinationRollback(prowlDir: string, files: StagedTemplateFile[]): DestinationRollback {
+  const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-init-rollback-"));
+  const backups: DestinationBackup[] = [];
+  const createdFiles: string[] = [];
+  const createdDirs = new Set<string>();
+  const prowlDirExisted = fs.existsSync(prowlDir);
+
+  try {
+    for (const file of files) {
+      const destination = path.join(prowlDir, file.relativePath);
+      if (fs.existsSync(destination)) {
+        const stat = fs.lstatSync(destination);
+        if (stat.isFile()) {
+          const backup = path.join(backupDir, file.relativePath);
+          copyFile(destination, backup);
+          backups.push({ destination, backup });
+        }
+      } else {
+        createdFiles.push(destination);
+      }
+
+      if (prowlDirExisted) {
+        trackCreatedParentDirs(destination, prowlDir, createdDirs);
+      }
+    }
+
+    return {
+      prowlDirExisted,
+      backupDir,
+      backups,
+      createdFiles,
+      createdDirs: [...createdDirs].sort((a, b) => b.length - a.length)
+    };
+  } catch (error) {
+    fs.rmSync(backupDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+function rollbackDestination(prowlDir: string, rollback: DestinationRollback): void {
+  if (!rollback.prowlDirExisted) {
+    fs.rmSync(prowlDir, { recursive: true, force: true });
+    return;
+  }
+
+  for (const file of rollback.createdFiles) {
+    fs.rmSync(file, { force: true });
+  }
+  for (const backup of rollback.backups) {
+    copyFile(backup.backup, backup.destination);
+  }
+  for (const dir of rollback.createdDirs) {
+    try {
+      fs.rmdirSync(dir);
+    } catch {
+      // Preserve any user/concurrent files created after rollback tracking.
+    }
+  }
+}
+
 /**
  * Scaffold a `.prowl/` directory under `root` from the package's bundled
  * `examples/` templates: `config.yml`, the starter hunts, and a `.gitignore`
@@ -98,11 +184,21 @@ export function scaffoldProwlDir(root: string): void {
   }
 
   const staged = stageScaffoldTemplates(examplesDir);
+  let rollback: DestinationRollback | null = null;
   try {
+    rollback = prepareDestinationRollback(prowlDir, staged.files);
     for (const file of staged.files) {
       copyFile(file.source, path.join(prowlDir, file.relativePath));
     }
+  } catch (error) {
+    if (rollback) {
+      rollbackDestination(prowlDir, rollback);
+    }
+    throw error;
   } finally {
+    if (rollback) {
+      fs.rmSync(rollback.backupDir, { recursive: true, force: true });
+    }
     fs.rmSync(staged.stageDir, { recursive: true, force: true });
   }
 }
