@@ -54,6 +54,46 @@ function isInsideDir(parent: string, child: string): boolean {
   return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
+function lstatIfExists(target: string): fs.Stats | null {
+  try {
+    return fs.lstatSync(target);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function assertNoSymlinkDestination(prowlDir: string, destination: string): void {
+  const relative = path.relative(prowlDir, destination);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`Refusing to write outside ${CONFIG_DIR}: ${destination}`);
+  }
+
+  const parts = relative.split(path.sep).filter((part) => part.length > 0);
+  let current = prowlDir;
+  for (const part of parts) {
+    const stat = lstatIfExists(current);
+    if (stat?.isSymbolicLink()) {
+      throw new Error(
+        `${CONFIG_DIR} scaffold destination path contains a symlink: ${current}. ` +
+          `Replace it with a real file or directory before running prowl init --force.`
+      );
+    }
+    current = path.join(current, part);
+  }
+
+  const stat = lstatIfExists(current);
+  if (stat?.isSymbolicLink()) {
+    throw new Error(
+      `${CONFIG_DIR} scaffold destination path contains a symlink: ${current}. ` +
+        `Replace it with a real file or directory before running prowl init --force.`
+    );
+  }
+}
+
 function gitignoreTemplate(): string {
   return [
     "# Run artifacts (screenshots, logs, reports)",
@@ -113,8 +153,10 @@ function prepareDestinationRollback(prowlDir: string, files: StagedTemplateFile[
   try {
     for (const file of files) {
       const destination = path.join(prowlDir, file.relativePath);
-      if (fs.existsSync(destination)) {
-        const stat = fs.lstatSync(destination);
+      assertNoSymlinkDestination(prowlDir, destination);
+
+      const stat = lstatIfExists(destination);
+      if (stat) {
         if (stat.isFile()) {
           const backup = path.join(backupDir, file.relativePath);
           copyFile(destination, backup);

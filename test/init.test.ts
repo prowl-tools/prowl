@@ -216,6 +216,62 @@ describe("prowl init", () => {
     }
   });
 
+  it("rejects symlinked template files under --force", () => {
+    runInit();
+
+    const prowlDir = path.join(process.cwd(), ".prowl");
+    const outsideFile = path.join(tempDir, "outside-config.yml");
+    fs.writeFileSync(outsideFile, "outside config");
+    const configPath = path.join(prowlDir, "config.yml");
+    fs.unlinkSync(configPath);
+    fs.symlinkSync(outsideFile, configPath);
+
+    const originalExitCode = process.exitCode;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      process.exitCode = undefined;
+      runInit(["--force"]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("contains a symlink"));
+      expect(fs.readFileSync(outsideFile, "utf-8")).toBe("outside config");
+      expect(fs.lstatSync(configPath).isSymbolicLink()).toBe(true);
+    } finally {
+      process.exitCode = originalExitCode;
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("rejects symlinked template parent directories under --force", () => {
+    runInit();
+
+    const prowlDir = path.join(process.cwd(), ".prowl");
+    const outsideHuntsDir = path.join(tempDir, "outside-hunts");
+    fs.mkdirSync(outsideHuntsDir);
+    const outsideHunt = path.join(outsideHuntsDir, "hello.yml");
+    fs.writeFileSync(outsideHunt, "outside hunt");
+    const huntsDir = path.join(prowlDir, "hunts");
+    fs.rmSync(huntsDir, { recursive: true, force: true });
+    fs.symlinkSync(outsideHuntsDir, huntsDir);
+
+    const originalExitCode = process.exitCode;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      process.exitCode = undefined;
+      runInit(["--force"]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("contains a symlink"));
+      expect(fs.readFileSync(outsideHunt, "utf-8")).toBe("outside hunt");
+      expect(fs.lstatSync(huntsDir).isSymbolicLink()).toBe(true);
+    } finally {
+      process.exitCode = originalExitCode;
+      errorSpy.mockRestore();
+    }
+  });
+
   it("preserves existing .prowl/ files when template staging fails under --force", () => {
     runInit();
 
