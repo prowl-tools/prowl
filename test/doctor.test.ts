@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/types/index.js";
 import type { MacdriverStatus } from "../src/browser/macdriver-install.js";
@@ -19,6 +22,10 @@ import {
   CHECK_MACOS,
   CHECK_IOS,
   CHECK_ANDROID,
+  INSTALL_CHROMIUM_TIMEOUT_MS,
+  defaultDoctorDeps,
+  playwrightInstallChromiumCommand,
+  resolvePlaywrightCliPath,
   type DoctorDeps,
   type PlaywrightProbeResult
 } from "../src/doctor/checks.js";
@@ -128,11 +135,32 @@ describe("target-aware checks", () => {
     const pass = await checkMacTarget(async () => resolved, {});
     expect(pass.status).toBe("pass");
     expect(pass.message).toContain("/bin/prowl-macdriver");
+    expect(pass.message).toContain("reports 0.1.0");
 
     const none: MacdriverStatus = { resolved: null, pinnedVersion: "0.1.0", installed: [], probedVersion: null };
     const fail = await checkMacTarget(async () => none, {});
     expect(fail.status).toBe("fail");
     expect(fail.message).toContain("prowl macdriver install");
+  });
+
+  it("fails the macOS check when status collection or version probing fails", async () => {
+    const rejected = await checkMacTarget(async () => {
+      throw new Error("probe crashed");
+    }, {});
+    expect(rejected.status).toBe("fail");
+    expect(rejected.message).toContain("probe crashed");
+    expect(rejected.message).toContain("prowl macdriver status");
+
+    const unprobed: MacdriverStatus = {
+      resolved: { path: "/bin/prowl-macdriver", source: "user-install" },
+      pinnedVersion: "0.1.0",
+      installed: [],
+      probedVersion: null
+    };
+    const failedProbe = await checkMacTarget(async () => unprobed, {});
+    expect(failedProbe.status).toBe("fail");
+    expect(failedProbe.message).toContain("version probe failed");
+    expect(failedProbe.message).toContain("prowl macdriver status");
   });
 
   it("fails the iOS check off macOS and probes simctl on macOS", async () => {
@@ -280,6 +308,33 @@ describe("runDoctor and --fix", () => {
   });
 });
 
+describe("default doctor dependencies", () => {
+  it("checks only the current directory for .prowl/", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-doctor-"));
+    try {
+      const child = path.join(root, "child");
+      fs.mkdirSync(path.join(root, ".prowl"));
+      fs.mkdirSync(child);
+
+      const deps = defaultDoctorDeps();
+      expect(deps.prowlDirExists(root)).toBe(true);
+      expect(deps.prowlDirExists(child)).toBe(false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("builds the Chromium install command from Prowl's resolved Playwright dependency", () => {
+    const command = playwrightInstallChromiumCommand();
+
+    expect(command.file).toBe(process.execPath);
+    expect(command.args).toEqual([resolvePlaywrightCliPath(), "install", "chromium"]);
+    expect(command.args[0]).toContain(path.join("node_modules", "playwright", "cli.js"));
+    expect(fs.existsSync(command.args[0])).toBe(true);
+    expect(INSTALL_CHROMIUM_TIMEOUT_MS).toBe(300000);
+  });
+});
+
 describe("doctor command", () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
@@ -307,6 +362,12 @@ describe("doctor command", () => {
   it("prints the summary and leaves the exit code unset when healthy", async () => {
     await buildDoctorCommand(makeDeps()).parseAsync(["node", "prowl", "doctor"]);
     expect(stdout()).toContain("Environment is healthy");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("prints the warning summary and leaves the exit code unset when only warnings remain", async () => {
+    await buildDoctorCommand(makeDeps({ prowlDirExists: () => false })).parseAsync(["node", "prowl", "doctor"]);
+    expect(stdout()).toContain("Environment is usable, with warnings");
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -338,6 +399,7 @@ describe("doctor command", () => {
       })
     ).parseAsync(["node", "prowl", "doctor"]);
     expect(errorSpy.mock.calls.flat().join("\n")).toContain("Error: boom");
+    expect(errorSpy.mock.calls.flat().join("\n")).toContain("Re-run `prowl doctor`; if it fails again, report the error.");
     expect(process.exitCode).toBe(1);
   });
 });

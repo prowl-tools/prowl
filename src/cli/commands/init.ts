@@ -1,10 +1,16 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import chalk from "chalk";
 import { welcomeBanner } from "../mascot.js";
 import { CONFIG_DIR } from "../../config/loader.js";
+
+interface StagedTemplateFile {
+  source: string;
+  relativePath: string;
+}
 
 function getPackageRoot(): string {
   const currentFile = fileURLToPath(import.meta.url);
@@ -30,6 +36,47 @@ function copyFile(source: string, destination: string): void {
   fs.copyFileSync(source, destination);
 }
 
+function gitignoreTemplate(): string {
+  return [
+    "# Run artifacts (screenshots, logs, reports)",
+    "runs/",
+    "",
+    "# Auth state (tokens, cookies)",
+    "auth-state.json",
+    "",
+    "# Environment variables (credentials)",
+    ".env",
+    "",
+  ].join("\n");
+}
+
+function stageScaffoldTemplates(examplesDir: string): { stageDir: string; files: StagedTemplateFile[] } {
+  const stageDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-init-"));
+  const files: StagedTemplateFile[] = [];
+
+  try {
+    copyFile(path.join(examplesDir, "config.yml"), path.join(stageDir, "config.yml"));
+    files.push({ source: path.join(stageDir, "config.yml"), relativePath: "config.yml" });
+
+    const exampleHuntsDir = path.join(examplesDir, "hunts");
+    const huntFiles = fs.readdirSync(exampleHuntsDir).filter((f) => f.endsWith(".yml"));
+    for (const huntFile of huntFiles) {
+      const relativePath = path.join("hunts", huntFile);
+      copyFile(path.join(exampleHuntsDir, huntFile), path.join(stageDir, relativePath));
+      files.push({ source: path.join(stageDir, relativePath), relativePath });
+    }
+
+    const gitignorePath = path.join(stageDir, ".gitignore");
+    fs.writeFileSync(gitignorePath, gitignoreTemplate());
+    files.push({ source: gitignorePath, relativePath: ".gitignore" });
+
+    return { stageDir, files };
+  } catch (error) {
+    fs.rmSync(stageDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
 /**
  * Scaffold a `.prowl/` directory under `root` from the package's bundled
  * `examples/` templates: `config.yml`, the starter hunts, and a `.gitignore`
@@ -50,29 +97,14 @@ export function scaffoldProwlDir(root: string): void {
     throw new Error("Examples not found in package. Reinstall prowl-tools.");
   }
 
-  copyFile(exampleConfig, path.join(prowlDir, "config.yml"));
-
-  const huntFiles = fs.readdirSync(exampleHuntsDir).filter((f) => f.endsWith(".yml"));
-  for (const huntFile of huntFiles) {
-    copyFile(
-      path.join(exampleHuntsDir, huntFile),
-      path.join(prowlDir, "hunts", huntFile)
-    );
+  const staged = stageScaffoldTemplates(examplesDir);
+  try {
+    for (const file of staged.files) {
+      copyFile(file.source, path.join(prowlDir, file.relativePath));
+    }
+  } finally {
+    fs.rmSync(staged.stageDir, { recursive: true, force: true });
   }
-
-  // Create .gitignore to keep artifacts and secrets out of version control
-  const gitignore = [
-    "# Run artifacts (screenshots, logs, reports)",
-    "runs/",
-    "",
-    "# Auth state (tokens, cookies)",
-    "auth-state.json",
-    "",
-    "# Environment variables (credentials)",
-    ".env",
-    "",
-  ].join("\n");
-  fs.writeFileSync(path.join(prowlDir, ".gitignore"), gitignore);
 }
 
 export function buildInitCommand(): Command {

@@ -1079,9 +1079,10 @@ skipped) with a one-line summary. It checks:
 
 Warnings do not fail the command; only real failures do (exit code `1`, so it
 slots into CI). `prowl doctor --fix` performs just the two safe repairs —
-installing Chromium (`npx playwright install chromium`) and scaffolding a
-missing `.prowl/` (the same templates `prowl init` writes) — then re-runs the
-checks and reports the new status. Everything else prints a manual remedy.
+installing Chromium through Prowl's resolved Playwright dependency and
+scaffolding a missing `.prowl/` (the same templates `prowl init` writes) — then
+re-runs the checks and reports the new status. Everything else prints a manual
+remedy.
 
 ### Run History
 

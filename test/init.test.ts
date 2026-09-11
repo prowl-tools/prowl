@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
-import { buildInitCommand } from "../src/cli/commands/init.js";
+import { buildInitCommand, scaffoldProwlDir } from "../src/cli/commands/init.js";
 import { CONFIG_DIR, loadHunt } from "../src/config/loader.js";
 
 describe("prowl init", () => {
@@ -150,5 +150,36 @@ describe("prowl init", () => {
     // Template files should be refreshed
     expect(fs.existsSync(path.join(tempDir, ".prowl", "config.yml"))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, ".prowl", ".gitignore"))).toBe(true);
+  });
+
+  it("does not create .prowl/ when template staging fails", () => {
+    const copySpy = vi.spyOn(fs, "copyFileSync").mockImplementation(() => {
+      throw new Error("copy failed");
+    });
+
+    try {
+      expect(() => scaffoldProwlDir(tempDir)).toThrow("copy failed");
+      expect(fs.existsSync(path.join(tempDir, ".prowl"))).toBe(false);
+    } finally {
+      copySpy.mockRestore();
+    }
+  });
+
+  it("preserves existing .prowl/ files when template staging fails under --force", () => {
+    runInit();
+
+    const userFile = path.join(tempDir, ".prowl", "my-notes.txt");
+    fs.writeFileSync(userFile, "user data");
+    const copySpy = vi.spyOn(fs, "copyFileSync").mockImplementation(() => {
+      throw new Error("copy failed");
+    });
+
+    try {
+      expect(() => scaffoldProwlDir(tempDir)).toThrow("copy failed");
+      expect(fs.existsSync(path.join(tempDir, ".prowl"))).toBe(true);
+      expect(fs.readFileSync(userFile, "utf-8")).toBe("user data");
+    } finally {
+      copySpy.mockRestore();
+    }
   });
 });

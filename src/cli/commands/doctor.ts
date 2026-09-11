@@ -95,7 +95,7 @@ export function buildDoctorCommand(deps: DoctorDeps = defaultDoctorDeps()): Comm
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : "doctor failed";
-        console.error(chalk.red(`Error: ${message}`));
+        console.error(chalk.red(`Error: ${message}\nRe-run \`prowl doctor\`; if it fails again, report the error.`));
         process.exitCode = 1;
       }
     });

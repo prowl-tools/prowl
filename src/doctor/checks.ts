@@ -20,11 +20,12 @@
  * failing check prints its manual remedy. System tools are never installed.
  */
 import { execFile } from "node:child_process";
+import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { Config } from "../types/index.js";
-import { loadConfig as loadProwlConfig, CONFIG_DIR, findConfigPath } from "../config/loader.js";
+import { loadConfig as loadProwlConfig, CONFIG_DIR } from "../config/loader.js";
 import { collectMacdriverStatus, type MacdriverStatus } from "../browser/macdriver-install.js";
 import { scaffoldProwlDir } from "../cli/commands/init.js";
 
@@ -42,6 +43,7 @@ export const CHECK_CONFIG = "config.yml valid";
 export const CHECK_MACOS = "macOS helper (prowl-macdriver)";
 export const CHECK_IOS = "iOS tooling (xcrun simctl)";
 export const CHECK_ANDROID = "Android tooling (adb)";
+export const INSTALL_CHROMIUM_TIMEOUT_MS = 300000;
 
 export type CheckStatus = "pass" | "fail" | "warn" | "skip";
 
@@ -79,7 +81,7 @@ export interface DoctorDeps {
   prowlDirExists: (cwd: string) => boolean;
   loadConfig: () => { config: Config };
   collectMacdriverStatus: (options?: { env?: NodeJS.ProcessEnv }) => Promise<MacdriverStatus>;
-  /** `--fix`: install the Chromium browser (`npx playwright install chromium`). */
+  /** `--fix`: install Chromium with Prowl's resolved Playwright dependency. */
   installChromium: () => Promise<void>;
   /** `--fix`: scaffold `.prowl/` via the same code path `prowl init` uses. */
   scaffoldProwlDir: (cwd: string) => void;
@@ -234,14 +236,38 @@ export async function checkMacTarget(
   collect: DoctorDeps["collectMacdriverStatus"],
   env: NodeJS.ProcessEnv
 ): Promise<CheckResult> {
-  const status = await collect({ env });
-  if (status.resolved) {
+  let status: MacdriverStatus;
+  try {
+    status = await collect({ env });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return {
+      name: CHECK_MACOS,
+      status: "fail",
+      message: `Could not inspect prowl-macdriver status (${detail}). Run \`prowl macdriver status\` for details.`,
+      fixable: false
+    };
+  }
+
+  if (status.resolved && status.probedVersion) {
     return {
       name: CHECK_MACOS,
       status: "pass",
       message:
-        `Resolved via ${macdriverSourceLabel(status.resolved.source)}: ${status.resolved.path}. ` +
+        `Resolved via ${macdriverSourceLabel(status.resolved.source)}: ${status.resolved.path} ` +
+        `(reports ${status.probedVersion}). ` +
         "Verify Accessibility/Screen Recording permissions with `prowl macdriver status`.",
+      fixable: false
+    };
+  }
+  if (status.resolved) {
+    return {
+      name: CHECK_MACOS,
+      status: "fail",
+      message:
+        `prowl-macdriver resolved via ${macdriverSourceLabel(status.resolved.source)} ` +
+        `(${status.resolved.path}), but the helper version probe failed. ` +
+        "Run `prowl macdriver status` for details.",
       fixable: false
     };
   }
@@ -398,9 +424,28 @@ async function defaultProbePlaywright(): Promise<PlaywrightProbeResult> {
 const defaultRunCommand: CommandRunner = async (file, args) =>
   execFileAsync(file, args, { timeout: 5000 }) as Promise<CommandResult>;
 
+function createLocalRequire(): NodeRequire {
+  if (typeof __filename === "string") {
+    return createRequire(__filename);
+  }
+  return createRequire(import.meta.url);
+}
+
+export function resolvePlaywrightCliPath(requireFn: NodeRequire = createLocalRequire()): string {
+  return path.join(path.dirname(requireFn.resolve("playwright/package.json")), "cli.js");
+}
+
+export function playwrightInstallChromiumCommand(): { file: string; args: string[] } {
+  return {
+    file: process.execPath,
+    args: [resolvePlaywrightCliPath(), "install", "chromium"]
+  };
+}
+
 async function defaultInstallChromium(): Promise<void> {
+  const command = playwrightInstallChromiumCommand();
   // Five-minute ceiling: a first-time Chromium download can be large.
-  await execFileAsync("npx", ["playwright", "install", "chromium"], { timeout: 300000 });
+  await execFileAsync(command.file, command.args, { timeout: INSTALL_CHROMIUM_TIMEOUT_MS });
 }
 
 /** Real implementations of every seam, for production use. */
@@ -412,7 +457,7 @@ export function defaultDoctorDeps(): DoctorDeps {
     env: process.env,
     probePlaywright: defaultProbePlaywright,
     runCommand: defaultRunCommand,
-    prowlDirExists: (cwd) => fs.existsSync(path.join(cwd, CONFIG_DIR)) || findConfigPath(cwd) !== null,
+    prowlDirExists: (cwd) => fs.existsSync(path.join(cwd, CONFIG_DIR)),
     loadConfig: () => loadProwlConfig(),
     collectMacdriverStatus,
     installChromium: defaultInstallChromium,
