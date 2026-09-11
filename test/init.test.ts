@@ -170,15 +170,23 @@ describe("prowl init", () => {
 
     const userFile = path.join(tempDir, ".prowl", "my-notes.txt");
     fs.writeFileSync(userFile, "user data");
+    const originalExitCode = process.exitCode;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const copySpy = vi.spyOn(fs, "copyFileSync").mockImplementation(() => {
       throw new Error("copy failed");
     });
 
     try {
-      expect(() => scaffoldProwlDir(tempDir)).toThrow("copy failed");
+      process.exitCode = undefined;
+      runInit(["--force"]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("copy failed"));
       expect(fs.existsSync(path.join(tempDir, ".prowl"))).toBe(true);
       expect(fs.readFileSync(userFile, "utf-8")).toBe("user data");
     } finally {
+      process.exitCode = originalExitCode;
+      errorSpy.mockRestore();
       copySpy.mockRestore();
     }
   });
