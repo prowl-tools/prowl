@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
-import { buildInitCommand } from "../src/cli/commands/init.js";
+import { buildInitCommand, scaffoldProwlDir } from "../src/cli/commands/init.js";
 import { CONFIG_DIR, loadHunt } from "../src/config/loader.js";
 
 describe("prowl init", () => {
@@ -23,6 +23,16 @@ describe("prowl init", () => {
   function runInit(args: string[] = []) {
     const cmd = buildInitCommand();
     cmd.parse(["node", "prowl", ...args]);
+  }
+
+  function failDestinationHuntCopies(prowlDir: string) {
+    const copyFileSync = fs.copyFileSync;
+    return vi.spyOn(fs, "copyFileSync").mockImplementation((source, destination, mode) => {
+      if (String(destination).startsWith(path.join(prowlDir, "hunts") + path.sep)) {
+        throw new Error("destination copy failed");
+      }
+      copyFileSync(source, destination, mode);
+    });
   }
 
   it("creates .prowl directory with config, example hunt, and .gitignore", () => {
@@ -150,5 +160,212 @@ describe("prowl init", () => {
     // Template files should be refreshed
     expect(fs.existsSync(path.join(tempDir, ".prowl", "config.yml"))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, ".prowl", ".gitignore"))).toBe(true);
+  });
+
+  it("does not create .prowl/ when template staging fails", () => {
+    const copySpy = vi.spyOn(fs, "copyFileSync").mockImplementation(() => {
+      throw new Error("copy failed");
+    });
+
+    try {
+      expect(() => scaffoldProwlDir(tempDir)).toThrow("copy failed");
+      expect(fs.existsSync(path.join(tempDir, ".prowl"))).toBe(false);
+    } finally {
+      copySpy.mockRestore();
+    }
+  });
+
+  it("removes a partial .prowl/ when destination copying fails", () => {
+    const prowlDir = path.join(tempDir, ".prowl");
+    const copySpy = failDestinationHuntCopies(prowlDir);
+
+    try {
+      expect(() => scaffoldProwlDir(tempDir)).toThrow("destination copy failed");
+      expect(fs.existsSync(prowlDir)).toBe(false);
+    } finally {
+      copySpy.mockRestore();
+    }
+  });
+
+  it("restores existing .prowl/ files when destination copying fails under --force", () => {
+    runInit();
+
+    const prowlDir = path.join(process.cwd(), ".prowl");
+    const configPath = path.join(prowlDir, "config.yml");
+    fs.writeFileSync(configPath, "user config");
+    const userFile = path.join(prowlDir, "my-notes.txt");
+    fs.writeFileSync(userFile, "user data");
+
+    const originalExitCode = process.exitCode;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const copySpy = failDestinationHuntCopies(prowlDir);
+
+    try {
+      process.exitCode = undefined;
+      runInit(["--force"]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("destination copy failed"));
+      expect(fs.existsSync(prowlDir)).toBe(true);
+      expect(fs.readFileSync(configPath, "utf-8")).toBe("user config");
+      expect(fs.readFileSync(userFile, "utf-8")).toBe("user data");
+    } finally {
+      process.exitCode = originalExitCode;
+      errorSpy.mockRestore();
+      copySpy.mockRestore();
+    }
+  });
+
+  it("rejects symlinked template files under --force", () => {
+    runInit();
+
+    const prowlDir = path.join(process.cwd(), ".prowl");
+    const outsideFile = path.join(tempDir, "outside-config.yml");
+    fs.writeFileSync(outsideFile, "outside config");
+    const configPath = path.join(prowlDir, "config.yml");
+    fs.unlinkSync(configPath);
+    fs.symlinkSync(outsideFile, configPath);
+
+    const originalExitCode = process.exitCode;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      process.exitCode = undefined;
+      runInit(["--force"]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("contains a symlink"));
+      expect(fs.readFileSync(outsideFile, "utf-8")).toBe("outside config");
+      expect(fs.lstatSync(configPath).isSymbolicLink()).toBe(true);
+    } finally {
+      process.exitCode = originalExitCode;
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("rejects symlinked template parent directories under --force", () => {
+    runInit();
+
+    const prowlDir = path.join(process.cwd(), ".prowl");
+    const outsideHuntsDir = path.join(tempDir, "outside-hunts");
+    fs.mkdirSync(outsideHuntsDir);
+    const outsideHunt = path.join(outsideHuntsDir, "hello.yml");
+    fs.writeFileSync(outsideHunt, "outside hunt");
+    const huntsDir = path.join(prowlDir, "hunts");
+    fs.rmSync(huntsDir, { recursive: true, force: true });
+    fs.symlinkSync(outsideHuntsDir, huntsDir);
+
+    const originalExitCode = process.exitCode;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      process.exitCode = undefined;
+      runInit(["--force"]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("contains a symlink"));
+      expect(fs.readFileSync(outsideHunt, "utf-8")).toBe("outside hunt");
+      expect(fs.lstatSync(huntsDir).isSymbolicLink()).toBe(true);
+    } finally {
+      process.exitCode = originalExitCode;
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("rejects non-regular template destinations under --force", () => {
+    runInit();
+
+    const prowlDir = path.join(process.cwd(), ".prowl");
+    const configPath = path.join(prowlDir, "config.yml");
+    fs.unlinkSync(configPath);
+    fs.mkdirSync(configPath);
+
+    const originalExitCode = process.exitCode;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      process.exitCode = undefined;
+      runInit(["--force"]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("not a regular file"));
+      expect(fs.statSync(configPath).isDirectory()).toBe(true);
+    } finally {
+      process.exitCode = originalExitCode;
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("preserves rollback backups when destination restoration fails under --force", () => {
+    runInit();
+
+    const prowlDir = path.join(process.cwd(), ".prowl");
+    const configPath = path.join(prowlDir, "config.yml");
+    fs.writeFileSync(configPath, "user config");
+    const realCopyFileSync = fs.copyFileSync;
+    let destinationFailed = false;
+    let backupDir: string | null = null;
+    const copySpy = vi.spyOn(fs, "copyFileSync").mockImplementation((source, destination, mode) => {
+      const sourcePath = String(source);
+      const destinationPath = String(destination);
+      if (sourcePath.includes("prowl-init-rollback-") && destinationPath === configPath) {
+        throw new Error("restore failed");
+      }
+      if (!destinationFailed && destinationPath.startsWith(path.join(prowlDir, "hunts") + path.sep)) {
+        destinationFailed = true;
+        throw new Error("destination copy failed");
+      }
+      realCopyFileSync(source, destination, mode);
+    });
+    const originalExitCode = process.exitCode;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      process.exitCode = undefined;
+      runInit(["--force"]);
+
+      const errorOutput = errorSpy.mock.calls.flat().join("\n");
+      const match = errorOutput.match(/Backup preserved at (.+)\./);
+      backupDir = match?.[1] ?? null;
+
+      expect(process.exitCode).toBe(1);
+      expect(errorOutput).toContain("Scaffold failed: destination copy failed");
+      expect(errorOutput).toContain("Rollback failed: Failed to restore");
+      expect(backupDir).not.toBeNull();
+      expect(fs.existsSync(backupDir as string)).toBe(true);
+    } finally {
+      process.exitCode = originalExitCode;
+      errorSpy.mockRestore();
+      copySpy.mockRestore();
+      if (backupDir) {
+        fs.rmSync(backupDir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("preserves existing .prowl/ files when template staging fails under --force", () => {
+    runInit();
+
+    const userFile = path.join(tempDir, ".prowl", "my-notes.txt");
+    fs.writeFileSync(userFile, "user data");
+    const originalExitCode = process.exitCode;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const copySpy = vi.spyOn(fs, "copyFileSync").mockImplementation(() => {
+      throw new Error("copy failed");
+    });
+
+    try {
+      process.exitCode = undefined;
+      runInit(["--force"]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("copy failed"));
+      expect(fs.existsSync(path.join(tempDir, ".prowl"))).toBe(true);
+      expect(fs.readFileSync(userFile, "utf-8")).toBe("user data");
+    } finally {
+      process.exitCode = originalExitCode;
+      errorSpy.mockRestore();
+      copySpy.mockRestore();
+    }
   });
 });
