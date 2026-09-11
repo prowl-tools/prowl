@@ -97,15 +97,6 @@ npx license-checker --summary --exclude 'MIT,ISC,Apache-2.0,BSD-2-Clause,BSD-3-C
 - Playwright: `page.waitForResponse()`
 - Schema validation, unit tests
 
-{PROWL-026} **P6-003: `prowl doctor` — Environment Health Check**
-   Verify that the user's environment is correctly set up for Prowl.
-
-**Acceptance Criteria**:
-- Checks: Node.js version (>=20), Playwright installed, Chromium available, `.prowl/` exists, `config.yml` valid
-- Actionable error messages for each failing check
-- `prowl doctor --fix` attempts auto-repair (install chromium, create `.prowl/`)
-- Color-coded output (green check / red X)
-
 {PROWL-027} **P6-005: Video Recording**
    Record full hunt execution as MP4 video.
 

@@ -4,6 +4,20 @@ All notable changes to Prowl will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **`prowl doctor` — environment health check (PROWL-026).** A new command that
+  verifies your machine is ready to run hunts: Node.js >= 20, Playwright
+  installed, Chromium available, a `.prowl/` directory, and a valid `config.yml`.
+  When the config is valid it also checks tooling for the *configured target
+  only* (desktop-first): the macOS target reuses `prowl macdriver status` to
+  report which helper binary resolved; the iOS target checks `xcrun simctl`
+  (macOS only); the Android target checks `adb`. Output is color-coded (green ✓
+  / yellow ⚠ / red ✗ / gray ○) with a one-line summary; warnings are
+  non-blocking and the exit code is `1` only when a check fails. `prowl doctor
+  --fix` performs the two safe repairs — install Chromium and scaffold a missing
+  `.prowl/` (the same templates `prowl init` writes) — then re-runs the checks;
+  every other failure prints a manual remedy and no system tools are installed.
+
 ### Changed
 - **Faster, event-driven waits on the macOS target (PROWL-056 / ARCH-008).**
   The `prowl-macdriver` helper no longer waits by polling on a fixed 100ms tick:

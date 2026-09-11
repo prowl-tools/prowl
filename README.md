@@ -1035,6 +1035,10 @@ prowl login
 prowl init
 prowl init --force                      # Overwrite existing
 
+# Doctor — check the environment is ready to run hunts
+prowl doctor
+prowl doctor --fix                      # Install Chromium / scaffold .prowl if missing
+
 # List available hunts
 prowl list
 
@@ -1057,6 +1061,28 @@ prowl mcp --projects ~/.prowl/projects.yml   # Drive multiple repos via a regist
 - Runs hunts in parallel with `count` workers.
 - Must be a positive integer (`>= 1`).
 - Invalid values (for example `0` or `1.5`) fail fast with an argument error.
+
+### Environment Check (`prowl doctor`)
+
+`prowl doctor` verifies your machine is ready to run hunts and prints a
+color-coded report (green ✓ pass, yellow ⚠ warning, red ✗ failure, gray ○
+skipped) with a one-line summary. It checks:
+
+- **Node.js** is version 20 or newer.
+- **Playwright** is installed, and its **Chromium** browser is available.
+- A **`.prowl/` directory** exists with a **valid `config.yml`**.
+- **Target tooling for your configured target only** (desktop-first): the macOS
+  target reuses `prowl macdriver status` to report which helper binary resolved;
+  the iOS target checks that `xcrun simctl` is reachable (macOS only); the
+  Android target checks that `adb` is reachable. Missing native tooling prints
+  the install command — `doctor` never installs system tools for you.
+
+Warnings do not fail the command; only real failures do (exit code `1`, so it
+slots into CI). `prowl doctor --fix` performs just the two safe repairs —
+installing Chromium through Prowl's resolved Playwright dependency and
+scaffolding a missing `.prowl/` (the same templates `prowl init` writes) — then
+re-runs the checks and reports the new status. Everything else prints a manual
+remedy.
 
 ### Run History
 
