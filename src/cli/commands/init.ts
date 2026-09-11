@@ -66,6 +66,10 @@ function lstatIfExists(target: string): fs.Stats | null {
   }
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function assertNoSymlinkDestination(prowlDir: string, destination: string): void {
   const relative = path.relative(prowlDir, destination);
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
@@ -74,7 +78,19 @@ function assertNoSymlinkDestination(prowlDir: string, destination: string): void
 
   const parts = relative.split(path.sep).filter((part) => part.length > 0);
   let current = prowlDir;
-  for (const part of parts) {
+  const rootStat = lstatIfExists(current);
+  if (rootStat?.isSymbolicLink()) {
+    throw new Error(
+      `${CONFIG_DIR} scaffold destination path contains a symlink: ${current}. ` +
+        `Replace it with a real file or directory before running prowl init --force.`
+    );
+  }
+  if (rootStat && !rootStat.isDirectory()) {
+    throw new Error(`${CONFIG_DIR} scaffold path is not a directory: ${current}`);
+  }
+
+  for (let index = 0; index < parts.length; index += 1) {
+    current = path.join(current, parts[index] ?? "");
     const stat = lstatIfExists(current);
     if (stat?.isSymbolicLink()) {
       throw new Error(
@@ -82,15 +98,9 @@ function assertNoSymlinkDestination(prowlDir: string, destination: string): void
           `Replace it with a real file or directory before running prowl init --force.`
       );
     }
-    current = path.join(current, part);
-  }
-
-  const stat = lstatIfExists(current);
-  if (stat?.isSymbolicLink()) {
-    throw new Error(
-      `${CONFIG_DIR} scaffold destination path contains a symlink: ${current}. ` +
-        `Replace it with a real file or directory before running prowl init --force.`
-    );
+    if (stat && index < parts.length - 1 && !stat.isDirectory()) {
+      throw new Error(`${CONFIG_DIR} scaffold parent path is not a directory: ${current}`);
+    }
   }
 }
 
@@ -157,11 +167,12 @@ function prepareDestinationRollback(prowlDir: string, files: StagedTemplateFile[
 
       const stat = lstatIfExists(destination);
       if (stat) {
-        if (stat.isFile()) {
-          const backup = path.join(backupDir, file.relativePath);
-          copyFile(destination, backup);
-          backups.push({ destination, backup });
+        if (!stat.isFile()) {
+          throw new Error(`${CONFIG_DIR} scaffold destination is not a regular file: ${destination}`);
         }
+        const backup = path.join(backupDir, file.relativePath);
+        copyFile(destination, backup);
+        backups.push({ destination, backup });
       } else {
         createdFiles.push(destination);
       }
@@ -194,7 +205,13 @@ function rollbackDestination(prowlDir: string, rollback: DestinationRollback): v
     fs.rmSync(file, { force: true });
   }
   for (const backup of rollback.backups) {
-    copyFile(backup.backup, backup.destination);
+    try {
+      copyFile(backup.backup, backup.destination);
+    } catch (error) {
+      throw new Error(
+        `Failed to restore ${backup.destination} from backup ${backup.backup}: ${errorMessage(error)}`
+      );
+    }
   }
   for (const dir of rollback.createdDirs) {
     try {
@@ -227,6 +244,7 @@ export function scaffoldProwlDir(root: string): void {
 
   const staged = stageScaffoldTemplates(examplesDir);
   let rollback: DestinationRollback | null = null;
+  let keepBackup = false;
   try {
     rollback = prepareDestinationRollback(prowlDir, staged.files);
     for (const file of staged.files) {
@@ -234,11 +252,19 @@ export function scaffoldProwlDir(root: string): void {
     }
   } catch (error) {
     if (rollback) {
-      rollbackDestination(prowlDir, rollback);
+      try {
+        rollbackDestination(prowlDir, rollback);
+      } catch (rollbackError) {
+        keepBackup = true;
+        throw new Error(
+          `Scaffold failed: ${errorMessage(error)}. Rollback failed: ${errorMessage(rollbackError)}. ` +
+            `Backup preserved at ${rollback.backupDir}.`
+        );
+      }
     }
     throw error;
   } finally {
-    if (rollback) {
+    if (rollback && !keepBackup) {
       fs.rmSync(rollback.backupDir, { recursive: true, force: true });
     }
     fs.rmSync(staged.stageDir, { recursive: true, force: true });

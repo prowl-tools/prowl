@@ -272,6 +272,77 @@ describe("prowl init", () => {
     }
   });
 
+  it("rejects non-regular template destinations under --force", () => {
+    runInit();
+
+    const prowlDir = path.join(process.cwd(), ".prowl");
+    const configPath = path.join(prowlDir, "config.yml");
+    fs.unlinkSync(configPath);
+    fs.mkdirSync(configPath);
+
+    const originalExitCode = process.exitCode;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      process.exitCode = undefined;
+      runInit(["--force"]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("not a regular file"));
+      expect(fs.statSync(configPath).isDirectory()).toBe(true);
+    } finally {
+      process.exitCode = originalExitCode;
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("preserves rollback backups when destination restoration fails under --force", () => {
+    runInit();
+
+    const prowlDir = path.join(process.cwd(), ".prowl");
+    const configPath = path.join(prowlDir, "config.yml");
+    fs.writeFileSync(configPath, "user config");
+    const realCopyFileSync = fs.copyFileSync;
+    let destinationFailed = false;
+    let backupDir: string | null = null;
+    const copySpy = vi.spyOn(fs, "copyFileSync").mockImplementation((source, destination, mode) => {
+      const sourcePath = String(source);
+      const destinationPath = String(destination);
+      if (sourcePath.includes("prowl-init-rollback-") && destinationPath === configPath) {
+        throw new Error("restore failed");
+      }
+      if (!destinationFailed && destinationPath.startsWith(path.join(prowlDir, "hunts") + path.sep)) {
+        destinationFailed = true;
+        throw new Error("destination copy failed");
+      }
+      realCopyFileSync(source, destination, mode);
+    });
+    const originalExitCode = process.exitCode;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      process.exitCode = undefined;
+      runInit(["--force"]);
+
+      const errorOutput = errorSpy.mock.calls.flat().join("\n");
+      const match = errorOutput.match(/Backup preserved at (.+)\./);
+      backupDir = match?.[1] ?? null;
+
+      expect(process.exitCode).toBe(1);
+      expect(errorOutput).toContain("Scaffold failed: destination copy failed");
+      expect(errorOutput).toContain("Rollback failed: Failed to restore");
+      expect(backupDir).not.toBeNull();
+      expect(fs.existsSync(backupDir as string)).toBe(true);
+    } finally {
+      process.exitCode = originalExitCode;
+      errorSpy.mockRestore();
+      copySpy.mockRestore();
+      if (backupDir) {
+        fs.rmSync(backupDir, { recursive: true, force: true });
+      }
+    }
+  });
+
   it("preserves existing .prowl/ files when template staging fails under --force", () => {
     runInit();
 
