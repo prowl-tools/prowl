@@ -556,20 +556,6 @@ and CI/CD & OpenShift epics should be re-prioritised against the beachhead) befo
 scheduled. **That re-evaluation ({PROWL-077}) was completed 2026-09-01** — decisions are
 recorded on each epic header and on the affected items' status lines.
 
-{PROWL-072} **SUNSET-001: Lean starter hunts in `prowl init` + curated docs examples (Hub replacement)**
-   With the community hub retired, do NOT rebuild a template registry inside the CLI — no
-   `prowl init --template`, no `prowl templates list`, no importing the full hub set (that would
-   just re-bloat the tool). Instead keep `prowl init` seeded with a small, high-value starter set
-   (currently `hello.yml` + `login-flow.yml`; optionally add one form example and a macOS one so
-   the desktop story has a starter), and publish a curated handful of worked examples on the docs
-   site for readers to copy. The rest of the old hub hunts are archived with the hub, not carried
-   into the CLI or the tarball.
-   **Acceptance Criteria**:
-   - `prowl init` scaffolds a lean starter set (smoke + auth at minimum); no `--template`/registry surface
-   - A curated examples set lives in the docs (prowl-docs), not a hub or the tarball
-   - No dependency on `prowl-hub`; CHANGELOG entry for any init-starter change
-   - In progress: `login-flow.yml` starter added on branch `init-login-starter`
-
 {PROWL-074} **SUNSET-003: Make the macOS target a two-minute install (gate for distribution)**
    A stranger cannot use the macOS target today: the Swift helper is not in the npm tarball,
    requires a source checkout + Xcode toolchain + `swift build`, then Accessibility and Screen
