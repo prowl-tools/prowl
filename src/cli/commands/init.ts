@@ -298,7 +298,8 @@ export function buildInitCommand(): Command {
       console.log(welcomeBanner());
       console.log(chalk.green(`  Initialized ${CONFIG_DIR} directory.`));
       console.log(chalk.gray("  Run ") + chalk.bold("prowl run hello") + chalk.gray(" to get started."));
-      console.log(chalk.gray("  See ") + chalk.cyan(`${CONFIG_DIR}/hunts/login-flow.yml`) + chalk.gray(" for a fuller example.") + "\n");
+      console.log(chalk.gray("  See ") + chalk.cyan(`${CONFIG_DIR}/hunts/login-flow.yml`) + chalk.gray(" (auth) and ") + chalk.cyan(`${CONFIG_DIR}/hunts/form.yml`) + chalk.gray(" (web forms) for fuller examples."));
+      console.log(chalk.gray("  Desktop-first? ") + chalk.cyan(`${CONFIG_DIR}/hunts/macos-hello.yml`) + chalk.gray(" is a macOS starter (experimental — see its comments to enable).") + "\n");
     });
 
   return command;

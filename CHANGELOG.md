@@ -5,6 +5,17 @@ All notable changes to Prowl will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Two more starter hunts in `prowl init` (PROWL-072).** Scaffolding a project
+  now writes four starters instead of two: alongside `hello.yml` (web smoke) and
+  `login-flow.yml` (web auth), `prowl init` adds `form.yml` — a web forms example
+  (`fill` / `select` / `assert`) — and `macos-hello.yml`, the desktop-first
+  first-run hunt that drives TextEdit through the Accessibility API. The macOS
+  starter carries inline setup guidance (switch the target to `macos`, scope
+  `guardrails.allowedApps`, `prowl macdriver install`, grant Accessibility
+  permission) and is clearly marked experimental. Both files ship through the
+  shared `examples/` templates, so `prowl doctor --fix` scaffolds them too. This
+  is the CLI half of the retired community hub's replacement — no template
+  registry, just a small curated starter set.
 - **`prowl doctor` — environment health check (PROWL-026).** A new command that
   verifies your machine is ready to run hunts: Node.js >= 20, Playwright
   installed, Chromium available, a `.prowl/` directory, and a valid `config.yml`.

@@ -1,0 +1,49 @@
+# macOS Hello — Your First Desktop Hunt (Experimental)
+# ---
+# Prowl drives native macOS apps through Apple's Accessibility API, from the same
+# YAML as web hunts. This starter targets TextEdit — present on every Mac — so you
+# can try the desktop target without wiring up your own app first.
+#
+# ── Before this hunt will run ───────────────────────────────────────────────
+# 1. Install the helper:  prowl macdriver install
+#    Until the first signed release ships, `install` returns a 404 — build from
+#    source instead (needs the Swift toolchain / Xcode CLT):
+#       cd macdriver && swift build -c release
+# 2. Grant Accessibility permission to the app hosting your terminal (Terminal,
+#    iTerm, VS Code, …): System Settings → Privacy & Security → Accessibility.
+#    `prowl macdriver status` prints the resolved binary and this guidance.
+# 3. Point .prowl/config.yml at a macOS target — init's default config targets
+#    the web. Replace its `target:` block, and scope the app under guardrails:
+#
+#       target:
+#         type: macos
+#         app: "com.apple.TextEdit"   # bundle id, or an absolute /path/to/App.app
+#       guardrails:
+#         allowedApps:
+#           - "com.apple.TextEdit"
+#
+# The macOS target is EXPERIMENTAL — the selector dialect and step coverage may
+# still change. `navigate`, `waitForUrl`, and other web-only steps are rejected
+# on it; the portable steps below (`type`, `assert: visible`) run on both targets.
+#
+# ── Finding selectors ───────────────────────────────────────────────────────
+# Don't guess selectors — dump them:  prowl analyze --app com.apple.TextEdit
+# It walks the Accessibility tree and prints every element with ranked selector
+# candidates (prefer `id=` — the native analog of data-testid). TextEdit's
+# controls aren't ours, so treat the steps below as a starting point and adjust
+# to what `analyze` reports on your macOS version.
+
+name: macos-hello
+description: Type into TextEdit and verify the text appears (experimental macOS target)
+
+tags:
+  - macos
+  - smoke
+
+steps:
+  # `type` sends keystrokes to the focused element — a fresh TextEdit document.
+  - type: "Hello from Prowl!"
+
+  # Portable assertion — the document's text should now contain what we typed.
+  - assert:
+      visible: "Hello from Prowl!"

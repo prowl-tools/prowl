@@ -1,0 +1,53 @@
+# Form Submission
+# ---
+# Pattern: Forms — fill text fields, pick a dropdown option, submit, verify result.
+# What it tests: Complete a form and confirm the success state renders.
+# Customize:
+#   - Point `navigate` at your form's path
+#   - Update the field labels, the dropdown label/option, and the button text
+#     to match your form
+#
+# Tip: Prefer stable selectors — an accessible label or a data-testid — over
+# brittle CSS. Run `prowl analyze` to dump ranked selector candidates for a page.
+
+name: form
+description: Fill and submit a form, verify the success message
+
+tags:
+  - forms
+  - input
+
+steps:
+  - navigate: "/signup"
+
+  # Shorthand fill — Prowl finds the input by its label or placeholder text.
+  # Equivalent explicit form:
+  #   fill:
+  #     selector: "input[name='name']"
+  #     value: "Ada Lovelace"
+  - fill:
+      "Full name": "Ada Lovelace"
+
+  - fill:
+      "Email": "ada@example.com"
+
+  # Shorthand select — finds the <select> by its label and picks the option by
+  # its visible text. Equivalent explicit form:
+  #   selectOption:
+  #     selector: "select[name='plan']"
+  #     value: "Pro"
+  - select:
+      "Plan": "Pro"
+
+  # Shorthand click — Prowl finds a checkbox or button by its text content.
+  - click: "I agree to the terms"
+
+  - click: "Create account"
+
+  # Mid-flow assertion — verify the success state rendered.
+  - assert:
+      visible: "Welcome, Ada"
+
+assertions:
+  - urlIncludes: "/welcome"
+  - noConsoleErrors: true

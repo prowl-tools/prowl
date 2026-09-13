@@ -35,13 +35,15 @@ describe("prowl init", () => {
     });
   }
 
-  it("creates .prowl directory with config, example hunt, and .gitignore", () => {
+  it("creates .prowl directory with config, starter hunts, and .gitignore", () => {
     runInit();
 
     const prowlDir = path.join(tempDir, ".prowl");
     expect(fs.existsSync(path.join(prowlDir, "config.yml"))).toBe(true);
     expect(fs.existsSync(path.join(prowlDir, "hunts", "hello.yml"))).toBe(true);
     expect(fs.existsSync(path.join(prowlDir, "hunts", "login-flow.yml"))).toBe(true);
+    expect(fs.existsSync(path.join(prowlDir, "hunts", "form.yml"))).toBe(true);
+    expect(fs.existsSync(path.join(prowlDir, "hunts", "macos-hello.yml"))).toBe(true);
     expect(fs.existsSync(path.join(prowlDir, ".gitignore"))).toBe(true);
   });
 
@@ -83,6 +85,64 @@ describe("prowl init", () => {
       { waitForUrl: { value: "/dashboard", timeout: 10000 } },
       { assert: { visible: "Dashboard" } },
     ]);
+  });
+
+  it("creates a valid form starter hunt", () => {
+    runInit();
+
+    const hunt = loadHunt("form", path.join(tempDir, ".prowl"));
+
+    expect(hunt).toMatchObject({
+      name: "form",
+      tags: ["forms", "input"],
+      assertions: [
+        { urlIncludes: "/welcome" },
+        { noConsoleErrors: true },
+      ],
+    });
+    expect(hunt.steps).toEqual([
+      { navigate: "/signup" },
+      { fill: { "Full name": "Ada Lovelace" } },
+      { fill: { Email: "ada@example.com" } },
+      { select: { Plan: "Pro" } },
+      { click: "I agree to the terms" },
+      { click: "Create account" },
+      { assert: { visible: "Welcome, Ada" } },
+    ]);
+  });
+
+  it("creates a valid macOS starter hunt using only portable steps", () => {
+    runInit();
+
+    const hunt = loadHunt("macos-hello", path.join(tempDir, ".prowl"));
+
+    expect(hunt).toMatchObject({
+      name: "macos-hello",
+      tags: ["macos", "smoke"],
+    });
+    expect(hunt.steps).toEqual([
+      { type: "Hello from Prowl!" },
+      { assert: { visible: "Hello from Prowl!" } },
+    ]);
+    // macOS hunts carry no web-only top-level assertions (noConsoleErrors etc.).
+    expect(hunt.assertions).toBeUndefined();
+  });
+
+  it("prints the bundled form and macOS starter paths on success", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      runInit();
+
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining(`${CONFIG_DIR}/hunts/form.yml`)
+      );
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining(`${CONFIG_DIR}/hunts/macos-hello.yml`)
+      );
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 
   it(".gitignore ignores runs, auth-state.json, and .env", () => {
