@@ -46,34 +46,6 @@ enrollment completes, the remaining steps are cert + API key, the six secrets, a
 - Tag `macdriver-v0.1.0` → workflow green with notarization `status: Accepted` → live-verify `prowl macdriver install`
 - Blocks {PROWL-074} completion and therefore {PROWL-076}/{PROWL-078}
 
-{PROWL-037} **GTM-002: Competitive Positioning Matrix**
-   Sharpen the comparison table on prowl.tools beyond feature checkmarks. Define what Prowl uniquely does better than Playwright Test, Cypress, Maestro, and Selenium — and be honest about where it's weaker. Current comparison table exists but isn't grounded in user feedback or win/loss data.
-
-**Found during**: Gap analysis (2026-02-16)
-**Status (2026-09-01, {PROWL-077} review)**: promoted Medium → High — the comparison page is
-a named deliverable of the {PROWL-078} distribution sprint and can be drafted now, ahead of
-the release gate ({PROWL-079}).
-**Practitioner pain points to ground it in** (Reddit thread research, 2026-08-16 — real language
-from Appium/Espresso/Maestro users; use these verbatim-ish, they beat feature checkmarks):
-- *"Flakiness drives me up the wall … debugging timing crap or CI fails that work fine locally"*
-  (Appium) → Prowl's answers: Playwright auto-waiting, deterministic scripted steps, flake
-  scoring/quarantine ({PROWL-035}), pinned container image ({PROWL-042}) for CI/local parity.
-  Be honest: the macOS target is black-box AX (no in-process idle signal à la Espresso).
-- *"Reliable and quick, but Android-only, and the boilerplate is a slog"* (Espresso) → hunts are
-  ~a dozen lines, no instrumentation build; platform coverage is web + experimental macOS.
-- *"YAML starts feeling like a cage when I need more control"* (Maestro) → Prowl's escape
-  hatches: `runHunt` composition, `if`/`repeat`, runtime vars, `evalScript`/`runScript`, and the
-  **library API** for graduating gnarly flows to TS (docs path tracked in prowl-docs PQD-005).
-- *"No IDs or anything useful"* → stable-selector philosophy + `prowl analyze` selector ranking
-  (macOS analog tracked as {PROWL-055}).
-- The poster's wish list (MCP-native, AI-assisted, local/BYOK, no lock-in) is Prowl's mission
-  statement — lead with it.
-**Deliverable**: Updated comparison page with:
-- "Best for" statement per competitor
-- Prowl's unique angle (YAML simplicity + agent-native + Playwright power)
-- Honest "not for you if..." section
-- Testimonial placeholders for when early users provide feedback
-
 ## Medium Priority
 
 {PROWL-011} **LEGAL-002: Add Dependency License Audit to CI**
