@@ -140,16 +140,29 @@ function isExpressionAllowed(expr) {
   }
   function parseAtom() {
     const tok = tokens[pos++];
+    if (tok === undefined) return false;
+    let value;
     if (tok === '(') {
-      const value = parseOr();
+      value = parseOr();
       if (peek() === ')') pos++;
-      return value;
+    } else {
+      value = ALLOWED.has(normalizeAtom(tok));
     }
-    return ALLOWED.has(normalizeAtom(tok));
+    // A `WITH <exception>` clause narrows a license grant; the base license's
+    // verdict stands, but the exception must be reviewed like any atom would —
+    // so treat it as not-allowed unless a human adds an EXCEPTIONS entry.
+    if (peek() === 'WITH') {
+      pos += 2;
+      return false;
+    }
+    return value;
   }
 
   if (tokens.length === 0) return false;
-  return parseOr();
+  const result = parseOr();
+  // Fail closed on malformed expressions: leftover tokens mean we did not
+  // understand the whole expression, so a human must review it.
+  return pos === tokens.length ? result : false;
 }
 
 /** A package's license field may be a string or an array; every entry must pass. */
