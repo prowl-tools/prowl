@@ -50,16 +50,18 @@ Project-specific details for the `release-prep-npm` skill (the generic workflow 
 - **Tarball contents** (`files` in `package.json`): `dist`, `examples`, `LICENSE`, `README.md`,
   `NOTICE`. Verify with `npm pack --dry-run` — never ship `src/`/`test/`, never omit `dist/` or
   attribution notices.
-- **npm version-history quirk**: an orphaned `1.0.0` exists on npm, but `latest` tracks the
-  `0.1.x` line. Keep releasing in the `0.1.x`/`0.x` line so `latest` advances; do not assume the
-  next version follows `1.0.0`.
+- **npm version history**: the once-orphaned `1.0.0` was removed from the registry (its tarball
+  404s and it no longer appears in `npm view prowl-tools versions` as of 2026-09-14), so the
+  version list is clean `0.1.x`. Keep releasing in the `0.1.x`/`0.x` line; still verify the next
+  number is unused with `npm view prowl-tools versions --json` before tagging.
 - **Downstream — Homebrew**: tap repo `prowl-tools/homebrew-tap`, formula `Formula/prowl.rb`,
   default branch `main`. The publish workflow does **not** update the tap. The formula pins the
   npm tarball by full `url` plus `sha256` (no separate `version` field). After publishing, set
   `url` to the new tarball and `sha256` to its hash (`npm view prowl-tools@<version> dist.tarball`
-  and `… dist.integrity`, or download + `shasum -a 256`), commit, and push the tap. NOTE: the
-  formula currently points at the orphaned `1.0.0`, so `brew install` is out of sync with npm
-  `latest` — bumping realigns them.
+  and `… dist.integrity`, or download + `shasum -a 256`), commit, and push the tap. The formula
+  tracks npm `latest` (bumped each release; last realigned to 0.1.9 on 2026-09-14). Note the
+  registry tarball can take a few minutes to propagate after publish — the metadata (`npm view`)
+  appears before the `.tgz` stops 404ing, so fetch the tarball with retries before hashing.
 - **Downstream — docs/web**: update `prowl-docs` for new commands/step types and `prowl-web` for
   major feature descriptions (see workspace cross-repo duties).
 - **Post-release — blog post (content-writer)**: after the tag is pushed and the publish
