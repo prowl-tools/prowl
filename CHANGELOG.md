@@ -4,6 +4,8 @@ All notable changes to Prowl will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-09-13
+
 ### Added
 - **Two more starter hunts in `prowl init` (PROWL-072).** Scaffolding a project
   now writes four starters instead of two: alongside `hello.yml` (web smoke) and
@@ -42,7 +44,10 @@ All notable changes to Prowl will be documented in this file.
   the previous polling behavior, with long fallback deadlines capped before the
   helper converts them to `useconds_t`. Event-sink failures are reported through
   an isolated diagnostic path and cannot break the helper transport. The macOS
-  target stays experimental.
+  target stays experimental. Note: this is a change to the `prowl-macdriver`
+  helper's source — you get it today by (re)building the helper from source
+  (`cd macdriver && swift build -c release`); the first prebuilt, signed helper
+  release will include it when it ships.
 
 ## [0.1.8] - 2026-09-08
 
