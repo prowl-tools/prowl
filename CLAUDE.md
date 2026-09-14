@@ -57,8 +57,10 @@ Project-specific details for the `release-prep-npm` skill (the generic workflow 
 - **Downstream — Homebrew**: tap repo `prowl-tools/homebrew-tap`, formula `Formula/prowl.rb`,
   default branch `main`. The publish workflow does **not** update the tap. The formula pins the
   npm tarball by full `url` plus `sha256` (no separate `version` field). After publishing, set
-  `url` to the new tarball and `sha256` to its hash (`npm view prowl-tools@<version> dist.tarball`
-  and `… dist.integrity`, or download + `shasum -a 256`), commit, and push the tap. The formula
+  `url` to the new tarball from `npm view prowl-tools@<version> dist.tarball`, download that
+  tarball, compute the Homebrew value with `shasum -a 256 <tarball.tgz>`, and set `sha256` to
+  that SHA-256. Use `npm view prowl-tools@<version> dist.integrity` only as an independent npm
+  integrity check, not as the Homebrew formula checksum. Commit and push the tap. The formula
   tracks npm `latest` (bumped each release; last realigned to 0.1.9 on 2026-09-14). Note the
   registry tarball can take a few minutes to propagate after publish — the metadata (`npm view`)
   appears before the `.tgz` stops 404ing, so fetch the tarball with retries before hashing.
