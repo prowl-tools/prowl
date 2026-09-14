@@ -145,23 +145,33 @@ prowl init
 
 <!-- ILLUSTRATION: Terminal screenshot showing `prowl init` output with raccoon mascot and file listing -->
 
-This creates a `.prowl/` directory with a config file and two starter hunts:
+This creates a `.prowl/` directory with a config file and four starter hunts:
 
 ```text
 .prowl/
-├── config.yml         # Target URL, browser settings, guardrails
-├── .gitignore         # Keeps runs/, auth-state.json, and .env out of git
+├── config.yml          # Target URL, browser settings, guardrails
+├── .gitignore          # Keeps runs/, auth-state.json, and .env out of git
 └── hunts/
-    ├── hello.yml       # Minimal smoke test — verifies the app loads
-    └── login-flow.yml  # Fuller example — auth, secrets, assertions
+    ├── hello.yml        # Minimal smoke test — verifies the app loads
+    ├── login-flow.yml   # Auth example — fill credentials, verify redirect
+    ├── form.yml         # Forms example — fill, select, submit, assert
+    └── macos-hello.yml  # Desktop starter — drive TextEdit (macOS, experimental)
 ```
+
+The web starters (`hello`, `login-flow`, `form`) run against the default web
+target as soon as you point `config.yml` at your app. `macos-hello` is the
+desktop-first first-run hunt: it drives TextEdit through the Accessibility API,
+and its inline comments walk you through switching the target to `macos` and the
+one-time setup (`prowl macdriver install`, Accessibility permission). The macOS
+target is experimental — see [macOS Target](#macos-target-experimental).
 
 `prowl init` finishes by pointing you at the first hunt:
 
 ```text
   Initialized .prowl directory.
   Run prowl run hello to get started.
-  See .prowl/hunts/login-flow.yml for a fuller example.
+  See .prowl/hunts/login-flow.yml (auth) and .prowl/hunts/form.yml (web forms) for fuller examples.
+  Desktop-first? .prowl/hunts/macos-hello.yml is a macOS starter (experimental — see its comments to enable).
 ```
 
 ### 3. Configure
