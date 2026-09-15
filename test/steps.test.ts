@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import yaml from "yaml";
 import { describe, expect, it, vi } from "vitest";
-import { executeSteps } from "../src/runner/steps.js";
+import { executeSteps, urlMatchesResponsePattern } from "../src/runner/steps.js";
 import { interpolateHunt } from "../src/config/interpolate.js";
 import type { Page } from "playwright";
 import type { Step } from "../src/types/index.js";
@@ -16,6 +16,8 @@ function createMockPage(options?: {
   locatorCounts?: Record<string, number>;
   textContents?: Record<string, string | null>;
   waitForEventResult?: unknown;
+  responses?: Array<{ url: string; status: number }>;
+  evaluateResult?: unknown;
 }) {
   let currentUrl = "http://localhost";
   const locators = new Map<string, { click: ReturnType<typeof vi.fn> }>();
@@ -57,8 +59,19 @@ function createMockPage(options?: {
     waitForSelector: vi.fn(async () => undefined),
     waitForURL: vi.fn(async () => undefined),
     waitForLoadState: vi.fn(async () => undefined),
+    waitForResponse: vi.fn(
+      async (predicate: (response: { url(): string; status(): number }) => boolean) => {
+        for (const r of options?.responses ?? []) {
+          const response = { url: () => r.url, status: () => r.status, headers: () => ({}) };
+          if (predicate(response)) {
+            return response;
+          }
+        }
+        throw new Error("Timeout 10000ms exceeded while waiting for event \"response\"");
+      }
+    ),
     waitForEvent: vi.fn(async () => options?.waitForEventResult ?? undefined),
-    evaluate: vi.fn(async () => undefined),
+    evaluate: vi.fn(async () => options?.evaluateResult ?? undefined),
     screenshot: vi.fn(async () => undefined),
     __locators: locators
   };
@@ -2977,6 +2990,151 @@ describe("assertWithAI step (PROWL-020)", () => {
     // No screenshot taken and, crucially, the model was never consulted.
     expect(page.screenshot).not.toHaveBeenCalled();
     expect(assertVision).not.toHaveBeenCalled();
+    fs.rmSync(runDir, { recursive: true, force: true });
+  });
+});
+
+describe("urlMatchesResponsePattern", () => {
+  it("matches a `**` glob against a full URL", () => {
+    expect(urlMatchesResponsePattern("**/api/orders", "https://shop.test/api/orders")).toBe(true);
+  });
+
+  it("is unanchored, so a `**` pattern still matches with a trailing query string", () => {
+    expect(
+      urlMatchesResponsePattern("**/api/orders", "https://shop.test/api/orders?page=2")
+    ).toBe(true);
+  });
+
+  it("treats a wildcard-free pattern as a substring match", () => {
+    expect(urlMatchesResponsePattern("/api/orders", "https://shop.test/api/orders?page=2")).toBe(
+      true
+    );
+    expect(urlMatchesResponsePattern("orders", "https://shop.test/v1/orders")).toBe(true);
+  });
+
+  it("does not match when the substring/glob is absent", () => {
+    expect(urlMatchesResponsePattern("/api/orders", "https://shop.test/api/products")).toBe(false);
+    expect(urlMatchesResponsePattern("**/api/orders", "https://shop.test/api/products")).toBe(
+      false
+    );
+  });
+
+  it("honors `?` as a single-character wildcard", () => {
+    expect(urlMatchesResponsePattern("/api/v?/orders", "https://shop.test/api/v2/orders")).toBe(
+      true
+    );
+    expect(urlMatchesResponsePattern("/api/v?/orders", "https://shop.test/api/v20/orders")).toBe(
+      false
+    );
+  });
+
+  it("escapes regex metacharacters in the pattern (dots are literal)", () => {
+    expect(urlMatchesResponsePattern("cdn.test/app.js", "https://cdn.test/app.js")).toBe(true);
+    // The literal dot must not act as a regex "any character".
+    expect(urlMatchesResponsePattern("cdn.test/app.js", "https://cdnXtest/appXjs")).toBe(false);
+  });
+});
+
+describe("waitForResponse step", () => {
+  const baseContext = (
+    page: ReturnType<typeof createMockPage>,
+    steps: Step[],
+    runDir: string
+  ) => ({
+    page: page as unknown as Page,
+    steps,
+    targetUrl: "http://localhost",
+    runDir,
+    screenshotsMode: "on-failure" as const,
+    forbiddenSelectors: [],
+    allowedDomains: ["localhost"],
+    maxTotalTimeMs: 30000,
+    maxSteps: 50,
+    redactedFillSteps: new Set<string>(),
+    configDir: runDir
+  });
+
+  it("passes when a response matches the url glob", async () => {
+    const page = createMockPage({
+      responses: [{ url: "https://shop.test/api/orders?page=2", status: 200 }]
+    });
+    const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-wfr-"));
+    const result = await executeSteps(
+      baseContext(page, [{ waitForResponse: { url: "**/api/orders" } }], runDir)
+    );
+    expect(result.failed).toBe(false);
+    expect(result.results[0]).toMatchObject({
+      type: "waitForResponse",
+      status: "pass",
+      value: "**/api/orders"
+    });
+    expect(page.waitForResponse).toHaveBeenCalledWith(expect.any(Function), { timeout: undefined });
+    fs.rmSync(runDir, { recursive: true, force: true });
+  });
+
+  it("resolves only on the matching status when a status filter is set", async () => {
+    const page = createMockPage({
+      responses: [
+        { url: "https://shop.test/api/orders", status: 500 },
+        { url: "https://shop.test/api/orders", status: 200 }
+      ]
+    });
+    const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-wfr-"));
+    const result = await executeSteps(
+      baseContext(page, [{ waitForResponse: { url: "**/api/orders", status: 200 } }], runDir)
+    );
+    expect(result.failed).toBe(false);
+    expect(result.results[0].status).toBe("pass");
+    fs.rmSync(runDir, { recursive: true, force: true });
+  });
+
+  it("fails when the url matches but the status filter does not", async () => {
+    const page = createMockPage({
+      responses: [{ url: "https://shop.test/api/orders", status: 500 }]
+    });
+    const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-wfr-"));
+    const result = await executeSteps(
+      baseContext(page, [{ waitForResponse: { url: "**/api/orders", status: 200 } }], runDir)
+    );
+    expect(result.failed).toBe(true);
+    expect(result.results[0].status).toBe("fail");
+    expect(result.results[0].error).toContain('no response matching "**/api/orders"');
+    expect(result.results[0].error).toContain("with status 200");
+    fs.rmSync(runDir, { recursive: true, force: true });
+  });
+
+  it("fails with a clear message naming the pattern and timeout on timeout", async () => {
+    const page = createMockPage({ responses: [] });
+    const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-wfr-"));
+    const result = await executeSteps(
+      baseContext(page, [{ waitForResponse: { url: "**/api/orders", timeout: 10000 } }], runDir)
+    );
+    expect(result.failed).toBe(true);
+    expect(result.results[0].status).toBe("fail");
+    expect(result.results[0].error).toBe(
+      'waitForResponse: no response matching "**/api/orders" was received within 10000ms.'
+    );
+    fs.rmSync(runDir, { recursive: true, force: true });
+  });
+
+  it("substitutes a captured runtime var into the url pattern", async () => {
+    const page = createMockPage({
+      responses: [{ url: "https://shop.test/api/orders/42", status: 200 }],
+      evaluateResult: "42"
+    });
+    const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-wfr-"));
+    const result = await executeSteps(
+      baseContext(
+        page,
+        [
+          { evalScript: { expression: "'42'", as: "ORDER_ID" } },
+          { waitForResponse: { url: "**/api/orders/{{ORDER_ID}}" } }
+        ],
+        runDir
+      )
+    );
+    expect(result.failed).toBe(false);
+    expect(result.results[1].status).toBe("pass");
     fs.rmSync(runDir, { recursive: true, force: true });
   });
 });
