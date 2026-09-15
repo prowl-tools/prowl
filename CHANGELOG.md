@@ -4,6 +4,8 @@ All notable changes to Prowl will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-09-15
+
 ### Added
 - **Retry diagnostics (PROWL-033).** When a hunt uses `retry`, Prowl now captures
   what each attempt did instead of retrying silently. `result.json` gains a
