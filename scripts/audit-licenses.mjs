@@ -64,14 +64,18 @@ const ALLOWED = new Set([
  */
 const EXCEPTIONS = Object.create(null);
 
-/** Collect the core runtime package set (name@version) from the resolved tree. */
-function collectCorePackages() {
+/** Read the core runtime dependency tree from npm's resolved lockfile graph. */
+function collectCorePackageTree() {
   const raw = execFileSync(
     'npm',
     ['ls', '--omit=dev', '--omit=optional', '--all', '--json'],
     { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
   );
-  const tree = JSON.parse(raw);
+  return JSON.parse(raw);
+}
+
+/** Collect the core runtime package set (name@version) from a resolved tree. */
+function collectCorePackagesFromTree(tree) {
   const set = new Set();
   /** Walk a resolved npm dependency node and collect reachable packages. */
   const visit = (node) => {
@@ -80,7 +84,7 @@ function collectCorePackages() {
       // Skip nodes that are not really part of this scope's resolved tree:
       // `extraneous` = present on disk but unreachable once optional edges are
       // omitted (e.g. sharp's platform binaries reached only via appium).
-      if (info.extraneous || info.missing || !info.version) continue;
+      if (info.extraneous || info.missing || info.dev || info.optional || !info.version) continue;
       set.add(`${name}@${info.version}`);
       visit(info);
     }
@@ -193,16 +197,14 @@ function isLicenseAllowed(licenses) {
   return list.every((lic) => isExpressionAllowed(String(lic)));
 }
 
-async function main() {
-  const core = collectCorePackages();
-  const licenseData = await collectLicenseData();
-
+/** Evaluate license data for a core package set without printing or exiting. */
+function auditCorePackages(core, licenseData, exceptions = EXCEPTIONS) {
   const failures = [];
   const exceptionsUsed = [];
 
   for (const pkg of [...core].sort()) {
-    if (pkg in EXCEPTIONS) {
-      exceptionsUsed.push(`${pkg} — ${EXCEPTIONS[pkg]}`);
+    if (pkg in exceptions) {
+      exceptionsUsed.push(`${pkg} — ${exceptions[pkg]}`);
       continue;
     }
     const entry = licenseData[pkg];
@@ -212,7 +214,25 @@ async function main() {
     }
   }
 
-  console.log(`License audit: scanned ${core.size} core runtime packages (dependencies only; devDependencies and experimental-mobile optionalDependencies excluded).`);
+  return { scannedCount: core.size, failures, exceptionsUsed };
+}
+
+/** Run the license audit with injectable inputs for tests. */
+async function runAudit(options = {}) {
+  const {
+    packageTree = collectCorePackageTree(),
+    licenseData,
+    exceptions = EXCEPTIONS,
+  } = options;
+  const core = collectCorePackagesFromTree(packageTree);
+  const resolvedLicenseData = licenseData ?? (await collectLicenseData());
+  return auditCorePackages(core, resolvedLicenseData, exceptions);
+}
+
+async function main() {
+  const { scannedCount, failures, exceptionsUsed } = await runAudit();
+
+  console.log(`License audit: scanned ${scannedCount} core runtime packages (dependencies only; devDependencies and experimental-mobile optionalDependencies excluded).`);
   if (exceptionsUsed.length) {
     console.log(`\nCleared via documented exceptions (${exceptionsUsed.length}):`);
     for (const line of exceptionsUsed) console.log(`  - ${line}`);
@@ -229,7 +249,7 @@ async function main() {
   console.log('\n✓ All core runtime dependencies use allowed licenses.');
 }
 
-export { isExpressionAllowed, isLicenseAllowed };
+export { isExpressionAllowed, isLicenseAllowed, runAudit };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((err) => {
