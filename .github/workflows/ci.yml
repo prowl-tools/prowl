@@ -46,7 +46,7 @@ jobs:
         with:
           node-version: 20
 
-      - run: npm ci
+      - run: npm ci --omit=optional --ignore-scripts
 
       # Fails the build if any core runtime dependency introduces a
       # non-permissive (e.g. GPL/AGPL) license — PROWL-011 / LEGAL-002.
