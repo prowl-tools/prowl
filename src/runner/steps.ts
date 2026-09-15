@@ -958,7 +958,12 @@ const STEP_HANDLERS: Record<string, StepHandler> = {
             (status === undefined || response.status() === status),
           { timeout }
         );
-      } catch {
+      } catch (err) {
+        // Only rewrite timeouts; other driver failures (page closed, crash)
+        // must surface as themselves, not as a missing-response message.
+        const isTimeout =
+          err instanceof Error && (err.name === "TimeoutError" || /timeout/i.test(err.message));
+        if (!isTimeout) throw err;
         const statusPart = status !== undefined ? ` with status ${status}` : "";
         const timeoutPart = timeout !== undefined ? ` within ${timeout}ms` : "";
         throw new Error(

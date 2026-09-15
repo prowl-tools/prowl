@@ -3117,6 +3117,21 @@ describe("waitForResponse step", () => {
     fs.rmSync(runDir, { recursive: true, force: true });
   });
 
+  it("surfaces non-timeout driver failures as themselves, not as a missing response", async () => {
+    const page = createMockPage({ responses: [] });
+    page.waitForResponse = vi.fn(async () => {
+      throw new Error("Target page, context or browser has been closed");
+    });
+    const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-wfr-"));
+    const result = await executeSteps(
+      baseContext(page, [{ waitForResponse: { url: "**/api/orders" } }], runDir)
+    );
+    expect(result.failed).toBe(true);
+    expect(result.results[0].error).toContain("has been closed");
+    expect(result.results[0].error).not.toContain("no response matching");
+    fs.rmSync(runDir, { recursive: true, force: true });
+  });
+
   it("substitutes a captured runtime var into the url pattern", async () => {
     const page = createMockPage({
       responses: [{ url: "https://shop.test/api/orders/42", status: 200 }],
