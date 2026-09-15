@@ -46,6 +46,7 @@ export function buildHistoryCommand(): Command {
 
         console.log();
         console.log(`  ${chalk.bold(huntName)} — last ${recent.length} of ${entries.length} runs`);
+        console.log(`  ${chalk.gray(formatRetryFrequency(recent))}`);
         console.log();
         console.log(formatTable(recent));
         console.log();
@@ -63,12 +64,29 @@ export function buildHistoryCommand(): Command {
   return command;
 }
 
+/**
+ * Retry-frequency line (PROWL-033): how many of the shown runs needed a retry, so a
+ * flaky hunt is easy to spot over time. Runs from before retry tracking count as 0.
+ */
+function formatRetryFrequency(entries: HistoryEntry[]): string {
+  const retried = entries.filter((entry) => (entry.retries ?? 0) > 0).length;
+  if (retried === 0) {
+    return "No retries in these runs";
+  }
+  return `Retried in ${retried} of ${entries.length} runs`;
+}
+
+function formatRetries(retries: number | undefined): string {
+  return retries && retries > 0 ? String(retries) : "-";
+}
+
 function formatTable(entries: HistoryEntry[]): string {
-  const headers = ["Status", "Started", "Duration"];
+  const headers = ["Status", "Started", "Duration", "Retries"];
   const rows = entries.map((entry) => [
     formatStatus(entry.status),
     entry.startedAt,
-    formatDuration(entry.durationMs)
+    formatDuration(entry.durationMs),
+    formatRetries(entry.retries)
   ]);
 
   const widths = headers.map((header, index) =>

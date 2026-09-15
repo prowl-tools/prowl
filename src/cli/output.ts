@@ -117,5 +117,9 @@ export function printHuntSummary(result: RunResult, runDir: string): void {
   const duration = chalk.gray(`(${result.durationMs}ms)`);
 
   console.log(`\n  ${status} ${chalk.bold(result.hunt)} ${duration} ${stepCount}`);
+  if (result.retrySummary) {
+    const color = result.status === "pass" ? chalk.yellow : chalk.red;
+    console.log(`  ${color(result.retrySummary)}`);
+  }
   console.log(`  ${chalk.gray("Artifacts:")} ${runDir}\n`);
 }

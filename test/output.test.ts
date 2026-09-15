@@ -1,6 +1,22 @@
-import { describe, expect, it } from "vitest";
-import { describeStep, truncate } from "../src/cli/output.js";
-import type { Step } from "../src/types/index.js";
+import chalk from "chalk";
+import { describe, expect, it, vi } from "vitest";
+import { describeStep, printHuntSummary, truncate } from "../src/cli/output.js";
+import type { RunResult, Step } from "../src/types/index.js";
+
+function makeResult(overrides?: Partial<RunResult>): RunResult {
+  return {
+    status: "pass",
+    exitCode: 0,
+    startedAt: "2026-02-12T00:00:00.000Z",
+    durationMs: 100,
+    hunt: "sample",
+    targetUrl: "http://localhost",
+    steps: [{ type: "navigate", status: "pass", durationMs: 10 }],
+    assertions: [],
+    artifacts: { screenshots: [] },
+    ...overrides
+  };
+}
 
 describe("describeStep", () => {
   it("describes navigate step", () => {
@@ -264,5 +280,57 @@ describe("truncate", () => {
 
   it("handles empty string", () => {
     expect(truncate("", 5)).toBe("");
+  });
+});
+
+describe("printHuntSummary", () => {
+  it("prints the retry headline when the run retried (PROWL-033)", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      printHuntSummary(
+        makeResult({ retrySummary: "Passed on attempt 2 of 3 — first failure: navigate (timeout)" }),
+        "/runs/abc"
+      );
+      const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Passed on attempt 2 of 3 — first failure: navigate (timeout)");
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("omits the retry headline for a first-attempt pass", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      printHuntSummary(makeResult(), "/runs/abc");
+      const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).not.toContain("attempt");
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("prints a failed retry headline in failure color (PROWL-033)", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const previousLevel = chalk.level;
+    const retrySummary = "Failed after 3 attempts — first failure: navigate (timeout)";
+    chalk.level = 1;
+    try {
+      printHuntSummary(
+        makeResult({
+          status: "fail",
+          exitCode: 1,
+          steps: [{ type: "navigate", status: "fail", durationMs: 10, error: "timeout" }],
+          retrySummary
+        }),
+        "/runs/abc"
+      );
+      const retryLine = logSpy.mock.calls
+        .map((c) => String(c[0]))
+        .find((line) => line.includes(retrySummary));
+      expect(retryLine).toBe(`  ${chalk.red(retrySummary)}`);
+    } finally {
+      chalk.level = previousLevel;
+      logSpy.mockRestore();
+    }
   });
 });

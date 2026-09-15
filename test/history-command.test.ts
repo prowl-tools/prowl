@@ -79,6 +79,37 @@ describe("history command", () => {
     expect(output).toContain("4.52s");
   });
 
+  it("shows a Retries column and retry-frequency line (PROWL-033)", () => {
+    mockLoadConfig.mockReturnValue({ configDir: "/tmp/.prowl" });
+    mockReadHuntHistory.mockReturnValue([
+      makeEntry({ status: "pass", durationMs: 812, startedAt: "2026-04-20T08:00:00.000Z" }),
+      makeEntry({ status: "pass", durationMs: 4523, startedAt: "2026-04-21T08:00:00.000Z", retries: 2 })
+    ]);
+
+    const cmd = buildHistoryCommand();
+    cmd.parse(["node", "prowl", "login-flow"]);
+
+    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("Retries");
+    expect(output).toContain("Retried in 1 of 2 runs");
+    expect(output).toMatch(/2026-04-21T08:00:00\.000Z\s+4\.52s\s+2\s*(?:\n|$)/);
+    expect(output).toMatch(/2026-04-20T08:00:00\.000Z\s+812ms\s+-\s*(?:\n|$)/);
+  });
+
+  it("reports no retries when every run passed first try, including legacy entries", () => {
+    mockLoadConfig.mockReturnValue({ configDir: "/tmp/.prowl" });
+    mockReadHuntHistory.mockReturnValue([
+      makeEntry({ status: "pass", startedAt: "2026-04-20T08:00:00.000Z" }),
+      makeEntry({ status: "fail", startedAt: "2026-04-21T08:00:00.000Z" })
+    ]);
+
+    const cmd = buildHistoryCommand();
+    cmd.parse(["node", "prowl", "login-flow"]);
+
+    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("No retries in these runs");
+  });
+
   it("outputs valid JSON with --json flag", () => {
     mockLoadConfig.mockReturnValue({ configDir: "/tmp/.prowl" });
     const entries = [

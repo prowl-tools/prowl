@@ -72,17 +72,6 @@ agreement, create the Developer ID Application cert, create the App Store Connec
 - `agent`: config with `--json` examples, library API usage guide, `.env` template for secrets
 - Existing behavior preserved as default when no preset is selected
 
-{PROWL-033} **P7-003: Retry Diagnostics**
-   When a hunt uses `retry` and eventually passes, capture diagnostic information about what failed and why the retry succeeded. Currently retries happen silently — the report only shows the final attempt.
-
-**Found during**: Gap analysis (2026-02-16)
-**Acceptance Criteria**:
-- `result.json` includes `retryHistory` array with per-attempt results when retries are used
-- Each attempt records: status, failed step, error message, duration
-- Summary report shows "Passed on attempt 2 of 3" with first-attempt failure reason
-- `prowl history` shows retry frequency per hunt over time
-- Helps distinguish "flaky test" from "slow environment" from "real regression"
-
 ## Low Priority
 
 {PROWL-003} **P2-008: `prowl ci --fail-fast` Option**

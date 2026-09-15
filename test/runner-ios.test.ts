@@ -204,7 +204,10 @@ describe("runHunt — iOS target (PROWL-059)", () => {
     await withProject(project, async (configPath) => {
       const { result } = await runHunt({ huntName: "retry", iosSessionFactory: factory, configPath });
       expect(result.status).toBe("pass");
-      expect(result.artifacts.summary).toBe("Passed on attempt 2 of 2");
+      expect(result.retrySummary).toMatch(/^Passed on attempt 2 of 2/);
+      expect(result.retryHistory).toHaveLength(2);
+      expect(result.retryHistory?.[0].status).toBe("fail");
+      expect(result.retryHistory?.[1].status).toBe("pass");
       expect(launched).toHaveLength(2);
       expect(tornDown).toBe(2);
     });
