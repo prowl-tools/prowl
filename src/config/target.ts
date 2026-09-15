@@ -23,6 +23,7 @@ export const WEB_ONLY_STEP_TYPES: ReadonlySet<string> = new Set([
   "navigate",
   "waitForUrl",
   "waitForNetworkIdle",
+  "waitForResponse",
   "mockRoute",
   "unmockRoute",
   "evalScript",

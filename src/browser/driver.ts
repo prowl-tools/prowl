@@ -102,6 +102,11 @@ export interface SessionDriver {
   waitForSelector(selector: string, options?: { timeout?: number }): Promise<void>;
   waitForUrl(predicate: (url: string) => boolean, options?: { timeout?: number }): Promise<void>;
   waitForNetworkIdle(options?: { timeout?: number }): Promise<void>;
+  /** Resolve once a network response satisfies `predicate`, or reject on timeout. */
+  waitForResponse(
+    predicate: (response: DriverResponse) => boolean,
+    options?: { timeout?: number }
+  ): Promise<void>;
 
   // scripting & artifacts ---------------------------------------------------
   evaluate<R = unknown, A = unknown>(

@@ -48,23 +48,6 @@ agreement, create the Developer ID Application cert, create the App Store Connec
 
 ## Medium Priority
 
-{PROWL-017} **P4-006: `waitForResponse` Step Type**
-   Wait for a specific network response before continuing. More precise than `waitForNetworkIdle`.
-
-```yaml
-- waitForResponse:
-    url: "**/api/orders"
-    status: 200
-    timeout: 10000
-```
-
-**Acceptance Criteria**:
-- `waitForResponse: { url: string, status?: number, timeout?: number }`
-- URL supports glob/substring matching
-- Optional status filter (only resolve when response matches status)
-- Playwright: `page.waitForResponse()`
-- Schema validation, unit tests
-
 {PROWL-027} **P6-005: Video Recording**
    Record full hunt execution as MP4 video.
 

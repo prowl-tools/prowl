@@ -442,6 +442,9 @@ export function createIosDriver(client: IosAgentClient, options: IosDriverOption
     waitForNetworkIdle(): Promise<void> {
       return rejectUnsupported("waitForNetworkIdle");
     },
+    waitForResponse(): Promise<void> {
+      return rejectUnsupported("waitForResponse");
+    },
 
     // scripting & artifacts ------------------------------------------------
     evaluate<R = unknown>(): Promise<R> {

@@ -10,6 +10,7 @@ const STEP_REFERENCE = `
 - waitForSelector: { selector: "#el", timeout: 5000 }
 - waitForUrl: { value: "/path", timeout: 5000 }
 - waitForNetworkIdle: { timeout: 5000 }
+- waitForResponse: { url: "**/api/orders", status: 200, timeout: 10000 } — wait for a matching network response (url is a glob/substring; status is optional)
 
 ### Interaction
 - click: "Button Text" — click by text (tries role=button first)

@@ -157,6 +157,9 @@ export type WaitForSelectorStep = { waitForSelector: { selector: string; timeout
 export type WaitStep = { wait: string | { for: string; timeout?: number } };
 export type WaitForUrlStep = { waitForUrl: { value: string; timeout?: number } };
 export type WaitForNetworkIdleStep = { waitForNetworkIdle: { timeout?: number } };
+export type WaitForResponseStep = {
+  waitForResponse: { url: string; status?: number; timeout?: number };
+};
 export type SelectOptionStep = { selectOption: { selector: string; value: string } };
 export type SelectStep = { select: Record<string, string> };
 export type OnDialogStep = { onDialog: { action: "accept" | "dismiss" } };
@@ -239,6 +242,7 @@ export type Step =
   | WaitForSelectorStep
   | WaitForUrlStep
   | WaitForNetworkIdleStep
+  | WaitForResponseStep
   | HoverStep
   | ScrollStep
   | ScrollToStep

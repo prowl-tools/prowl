@@ -225,6 +225,9 @@ export function createMacDriver(client: MacHelperClient, options: MacDriverOptio
     waitForNetworkIdle(): Promise<void> {
       return rejectUnsupported("waitForNetworkIdle");
     },
+    waitForResponse(): Promise<void> {
+      return rejectUnsupported("waitForResponse");
+    },
 
     // scripting & artifacts ------------------------------------------------
     evaluate<R = unknown>(): Promise<R> {

@@ -5,6 +5,18 @@ All notable changes to Prowl will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **`waitForResponse` step type (PROWL-017).** Wait for a specific network
+  response before continuing — more precise than `waitForNetworkIdle`, which
+  waits for *all* traffic to settle. The `url` field is matched against each
+  response URL as an unanchored glob (`*`/`**` match any run of characters
+  including `/`, `?` matches a single character), so a wildcard-free pattern
+  behaves as a substring match. An optional `status` filter resolves the step
+  only on a response with that exact HTTP status, and `timeout` fails the step
+  with a message naming the pattern (and status/timeout) if no matching response
+  arrives. The `url` supports both hunt-var interpolation (`{{VAR}}` from
+  `vars`/env) and runtime-var substitution (from a captured `evalScript`/
+  `copyText` value). It is a web-only step, rejected up front on the
+  macOS/iOS/Android targets like the other network steps.
 - **Dependency license audit in CI (PROWL-011 / LEGAL-002).** A new
   `license-audit` job in the CI workflow runs `npm run audit:licenses` and fails
   the build if any package in Prowl's core runtime dependency tree carries a

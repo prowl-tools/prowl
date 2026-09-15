@@ -20,6 +20,7 @@ describe("webOnlyReason", () => {
     expect(webOnlyReason({ navigate: "/" })).toBe("navigate");
     expect(webOnlyReason({ evalScript: "1+1" })).toBe("evalScript");
     expect(webOnlyReason({ onDialog: { action: "accept" } })).toBe("onDialog");
+    expect(webOnlyReason({ waitForResponse: { url: "**/api" } })).toBe("waitForResponse");
   });
 
   it("flags url assertions but allows visible assertions", () => {
@@ -49,6 +50,12 @@ describe("assertStepsSupportedByTarget", () => {
     expect(() => assertStepsSupportedByTarget([{ navigate: "/" }], "macos")).toThrow(
       'Step "navigate" is not supported by the macOS target'
     );
+  });
+
+  it("rejects a waitForResponse step on the macos target", () => {
+    expect(() =>
+      assertStepsSupportedByTarget([{ waitForResponse: { url: "**/api/orders" } }], "macos")
+    ).toThrow('Step "waitForResponse" is not supported by the macOS target');
   });
 
   it("accepts a fully portable macos hunt", () => {

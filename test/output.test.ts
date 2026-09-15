@@ -43,6 +43,16 @@ describe("describeStep", () => {
     expect(describeStep(step)).toBe('selectOption "#country"');
   });
 
+  it("describes waitForResponse step without a status filter", () => {
+    const step: Step = { waitForResponse: { url: "**/api/orders" } };
+    expect(describeStep(step)).toBe('waitForResponse "**/api/orders"');
+  });
+
+  it("describes waitForResponse step with a status filter", () => {
+    const step: Step = { waitForResponse: { url: "**/api/orders", status: 200 } };
+    expect(describeStep(step)).toBe('waitForResponse "**/api/orders" (status 200)');
+  });
+
   it("describes select shorthand", () => {
     const step: Step = { select: { State: "FL" } };
     expect(describeStep(step)).toBe('select "State"');

@@ -184,6 +184,84 @@ describe("huntSchema new step types", () => {
     });
     expect(parsed.steps).toHaveLength(1);
   });
+
+  it("accepts waitForResponse step with url, status and timeout", () => {
+    const parsed = huntSchema.parse({
+      steps: [{ waitForResponse: { url: "**/api/orders", status: 200, timeout: 10000 } }]
+    });
+    expect(parsed.steps[0]).toEqual({
+      waitForResponse: { url: "**/api/orders", status: 200, timeout: 10000 }
+    });
+  });
+
+  it("accepts waitForResponse step with only url (status/timeout optional)", () => {
+    const parsed = huntSchema.parse({
+      steps: [{ waitForResponse: { url: "/api/orders" } }]
+    });
+    expect(parsed.steps).toHaveLength(1);
+  });
+
+  it("rejects waitForResponse step without a url", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ waitForResponse: { status: 200 } }] })
+    ).toThrow();
+  });
+
+  it("rejects waitForResponse step with an empty url", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ waitForResponse: { url: "" } }] })
+    ).toThrow();
+  });
+
+  it("rejects waitForResponse step with unknown keys (strict)", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ waitForResponse: { url: "/api", method: "GET" } }] })
+    ).toThrow();
+  });
+
+  it("rejects waitForResponse step with a non-integer status", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ waitForResponse: { url: "/api", status: 200.5 } }] })
+    ).toThrow();
+  });
+
+  it("accepts waitForResponse status boundary values", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ waitForResponse: { url: "/api", status: 100 } }] })
+    ).not.toThrow();
+    expect(() =>
+      huntSchema.parse({ steps: [{ waitForResponse: { url: "/api", status: 599 } }] })
+    ).not.toThrow();
+  });
+
+  it("rejects waitForResponse status values outside the HTTP range", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ waitForResponse: { url: "/api", status: 99 } }] })
+    ).toThrow();
+    expect(() =>
+      huntSchema.parse({ steps: [{ waitForResponse: { url: "/api", status: 600 } }] })
+    ).toThrow();
+  });
+
+  it("accepts waitForResponse timeout 0 as no timeout", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ waitForResponse: { url: "/api", timeout: 0 } }] })
+    ).not.toThrow();
+  });
+
+  it("rejects invalid waitForResponse timeouts", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ waitForResponse: { url: "/api", timeout: -1 } }] })
+    ).toThrow();
+    expect(() =>
+      huntSchema.parse({
+        steps: [{ waitForResponse: { url: "/api", timeout: Number.POSITIVE_INFINITY } }]
+      })
+    ).toThrow();
+    expect(() =>
+      huntSchema.parse({ steps: [{ waitForResponse: { url: "/api", timeout: 100.5 } }] })
+    ).toThrow();
+  });
 });
 
 describe("huntSchema tags and retry", () => {

@@ -54,6 +54,17 @@ describe("interpolateHunt", () => {
     expect(redactedFillSteps.has("1")).toBe(true);
   });
 
+  it("interpolates a hunt var into a waitForResponse url and preserves status/timeout", () => {
+    const hunt: Hunt = {
+      vars: { ORDERS_PATH: "/api/orders" },
+      steps: [{ waitForResponse: { url: "**{{ORDERS_PATH}}", status: 200, timeout: 10000 } }]
+    };
+    const { hunt: interpolated } = interpolateHunt(hunt, env);
+    expect(interpolated.steps[0]).toEqual({
+      waitForResponse: { url: "**/api/orders", status: 200, timeout: 10000 }
+    });
+  });
+
   it("records interpolated values for output redaction", () => {
     const hunt: Hunt = {
       vars: { RESET_PATH: "/reset?token={{TEST_PASSWORD}}" },
