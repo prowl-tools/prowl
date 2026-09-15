@@ -5,6 +5,21 @@ All notable changes to Prowl will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Retry diagnostics (PROWL-033).** When a hunt uses `retry`, Prowl now captures
+  what each attempt did instead of retrying silently. `result.json` gains a
+  `retryHistory` array — one lean record per attempt with its `attempt` number,
+  `status`, `durationMs`, the first `failedStep` (`index` + `type`), and the
+  `error` — plus a human-readable `retrySummary` headline
+  (e.g. `Passed on attempt 2 of 3 — first failure: navigate (timeout)`). Both
+  fields are present only when a retry actually ran, so first-attempt passes and
+  older run artifacts are unchanged and keep parsing. The `prowl run` summary and
+  the `summary.md` report show the headline and per-attempt breakdown, and
+  `prowl history` adds a `Retries` column plus a retry-frequency line
+  (`Retried in N of M runs`) so a flaky hunt is easy to tell apart from a slow
+  environment or a real regression over time. `history.json` records a per-run
+  `retries` count (omitted when zero; older files without it still load). JUnit
+  continues to report the final attempt's outcome — per-attempt history lives in
+  `result.json`, not the XML.
 - **`waitForResponse` step type (PROWL-017).** Wait for a specific network
   response before continuing — more precise than `waitForNetworkIdle`, which
   waits for *all* traffic to settle. The `url` field is matched against each
