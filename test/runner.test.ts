@@ -161,6 +161,9 @@ describe("runHunt", () => {
     expect(result.status).toBe("pass");
     expect(result.exitCode).toBe(0);
     expect(result.hunt).toBe("test-hunt");
+    // A first-attempt pass carries no retry diagnostics.
+    expect(result.retryHistory).toBeUndefined();
+    expect(result.retrySummary).toBeUndefined();
     expect(mockLaunchBrowser).toHaveBeenCalled();
     expect(mockCreatePlaywrightDriver).toHaveBeenCalledWith(session.page);
     expect(driver.onResponse).toHaveBeenCalledWith(expect.any(Function));
@@ -309,7 +312,18 @@ describe("runHunt", () => {
 
     expect(result.status).toBe("pass");
     expect(mockExecuteSteps).toHaveBeenCalledTimes(2);
-    expect(result.artifacts.summary).toContain("attempt 2 of 2");
+    expect(result.retrySummary).toContain("Passed on attempt 2 of 2");
+    expect(result.retrySummary).toContain("first failure: navigate (timeout)");
+    expect(result.retryHistory).toEqual([
+      {
+        attempt: 1,
+        status: "fail",
+        durationMs: expect.any(Number),
+        failedStep: { index: 0, type: "navigate" },
+        error: "timeout"
+      },
+      { attempt: 2, status: "pass", durationMs: expect.any(Number) }
+    ]);
   });
 
   it("returns fail after exhausting all retries", async () => {
@@ -325,7 +339,15 @@ describe("runHunt", () => {
 
     expect(result.status).toBe("fail");
     expect(mockExecuteSteps).toHaveBeenCalledTimes(3);
-    expect(result.artifacts.summary).toContain("Failed after 3 attempts");
+    expect(result.retrySummary).toContain("Failed after 3 attempts");
+    expect(result.retryHistory).toHaveLength(3);
+    expect(result.retryHistory?.every((a) => a.status === "fail")).toBe(true);
+    expect(result.retryHistory?.[0]).toMatchObject({
+      attempt: 1,
+      status: "fail",
+      failedStep: { index: 0, type: "navigate" },
+      error: "timeout"
+    });
   });
 
   it("does not retry when hunt has no retry config", async () => {
@@ -338,6 +360,8 @@ describe("runHunt", () => {
 
     expect(result.status).toBe("fail");
     expect(mockExecuteSteps).toHaveBeenCalledTimes(1);
+    expect(result.retryHistory).toBeUndefined();
+    expect(result.retrySummary).toBeUndefined();
   });
 
   it("calls onStep callback during execution", async () => {
@@ -432,6 +456,7 @@ describe("runHunt", () => {
     expect(mockAppendHistoryEntry).toHaveBeenCalledTimes(1);
     const [, entry] = mockAppendHistoryEntry.mock.calls[0];
     expect(entry.status).toBe("pass");
+    expect(entry.retries).toBe(1);
   });
 
   it("writes only one history entry when all retries fail", async () => {
@@ -447,6 +472,7 @@ describe("runHunt", () => {
     expect(mockAppendHistoryEntry).toHaveBeenCalledTimes(1);
     const [, entry] = mockAppendHistoryEntry.mock.calls[0];
     expect(entry.status).toBe("fail");
+    expect(entry.retries).toBe(2);
   });
 
   it("does not let a history write failure break the run", async () => {

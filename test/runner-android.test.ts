@@ -221,7 +221,10 @@ describe("runHunt — Android target (PROWL-058)", () => {
     await withProject(project, async () => {
       const { result } = await runHunt({ huntName: "retry", androidSessionFactory: factory });
       expect(result.status).toBe("pass");
-      expect(result.artifacts.summary).toBe("Passed on attempt 2 of 2");
+      expect(result.retrySummary).toMatch(/^Passed on attempt 2 of 2/);
+      expect(result.retryHistory).toHaveLength(2);
+      expect(result.retryHistory?.[0].status).toBe("fail");
+      expect(result.retryHistory?.[1].status).toBe("pass");
       expect(launched).toHaveLength(2);
       expect(tornDown).toBe(2);
     });

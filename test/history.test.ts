@@ -169,6 +169,33 @@ describe("readHistory", () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("preserves a valid retries count and round-trips entries without one (PROWL-033)", () => {
+    const dir = setupTempDir();
+    try {
+      fs.writeFileSync(
+        path.join(dir, "history.json"),
+        JSON.stringify({
+          entries: [
+            // Legacy entry from before retry tracking — must still parse.
+            { hunt: "legacy", status: "pass", durationMs: 10, startedAt: "2026-01-01T00:00:00.000Z" },
+            { hunt: "retried", status: "pass", durationMs: 20, startedAt: "2026-01-02T00:00:00.000Z", retries: 2 },
+            // A non-numeric retries value is rejected like any other malformed field.
+            { hunt: "bad-retries", status: "pass", durationMs: 30, startedAt: "2026-01-03T00:00:00.000Z", retries: "2" }
+          ]
+        })
+      );
+
+      expect(readHistory(dir)).toEqual({
+        entries: [
+          { hunt: "legacy", status: "pass", durationMs: 10, startedAt: "2026-01-01T00:00:00.000Z" },
+          { hunt: "retried", status: "pass", durationMs: 20, startedAt: "2026-01-02T00:00:00.000Z", retries: 2 }
+        ]
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("appendEntry", () => {

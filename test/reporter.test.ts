@@ -133,6 +133,46 @@ describe("writeSummary content", () => {
       fs.rmSync(runDir, { recursive: true, force: true });
     }
   });
+
+  it("renders a Retries section with the headline and each attempt (PROWL-033)", () => {
+    const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-summary-"));
+    try {
+      const result = makeResult({
+        retrySummary: "Passed on attempt 2 of 3 — first failure: navigate (timeout)",
+        retryHistory: [
+          {
+            attempt: 1,
+            status: "fail",
+            durationMs: 10,
+            failedStep: { index: 0, type: "navigate" },
+            error: "timeout"
+          },
+          { attempt: 2, status: "pass", durationMs: 12 }
+        ]
+      });
+      writeSummary(runDir, result);
+      const content = fs.readFileSync(path.join(runDir, "summary.md"), "utf-8");
+
+      expect(content).toContain("## Retries");
+      expect(content).toContain("Passed on attempt 2 of 3 — first failure: navigate (timeout)");
+      expect(content).toContain("- attempt 1: FAIL (10ms) failed-step=[0] navigate error=timeout");
+      expect(content).toContain("- attempt 2: PASS (12ms)");
+    } finally {
+      fs.rmSync(runDir, { recursive: true, force: true });
+    }
+  });
+
+  it("omits the Retries section when no retry occurred", () => {
+    const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-summary-"));
+    try {
+      writeSummary(runDir, makeResult());
+      const content = fs.readFileSync(path.join(runDir, "summary.md"), "utf-8");
+
+      expect(content).not.toContain("## Retries");
+    } finally {
+      fs.rmSync(runDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("markdown escaping", () => {
