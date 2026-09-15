@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { AssertionResult, RunResult, StepResult } from "../types/index.js";
+import type { AssertionResult, RetryAttempt, RunResult, StepResult } from "../types/index.js";
 
 export function escapeMd(text: string): string {
   return text.replace(/([|`*_{}[\]()#+\-!\\])/g, "\\$1");
@@ -13,6 +13,18 @@ function formatStep(step: StepResult): string {
   const value = step.value ? ` value=${escapeMd(step.value)}` : "";
   const error = step.error ? ` error=${escapeMd(step.error)}` : "";
   return `${base}${selector}${healed}${value}${error}`;
+}
+
+function formatRetryAttempt(attempt: RetryAttempt): string {
+  const base = `- attempt ${attempt.attempt}: ${attempt.status.toUpperCase()} (${attempt.durationMs}ms)`;
+  if (attempt.status === "pass") {
+    return base;
+  }
+  const step = attempt.failedStep
+    ? ` failed-step=[${attempt.failedStep.index}] ${escapeMd(attempt.failedStep.type)}`
+    : "";
+  const error = attempt.error ? ` error=${escapeMd(attempt.error)}` : "";
+  return `${base}${step}${error}`;
 }
 
 function formatAssertion(assertion: AssertionResult): string {
@@ -30,6 +42,18 @@ export function writeSummary(runDir: string, result: RunResult): string {
   lines.push(`Target: ${result.targetUrl}`);
   lines.push(`Started: ${result.startedAt}`);
   lines.push(`Duration: ${result.durationMs}ms`);
+
+  if (result.retryHistory && result.retryHistory.length > 1) {
+    lines.push("");
+    lines.push("## Retries");
+    if (result.retrySummary) {
+      lines.push(result.retrySummary);
+    }
+    for (const attempt of result.retryHistory) {
+      lines.push(formatRetryAttempt(attempt));
+    }
+  }
+
   lines.push("");
   lines.push("## Steps");
   for (const step of result.steps) {

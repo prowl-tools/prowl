@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { AndroidTarget, AssertionResult, BrowserChannel, Config, IosTarget, MacosTarget, RunResult, Step, StepResult, TraceCorrelation } from "../types/index.js";
+import type { AndroidTarget, AssertionResult, BrowserChannel, Config, IosTarget, MacosTarget, RetryAttempt, RunResult, Step, StepResult, TraceCorrelation } from "../types/index.js";
 import { loadConfig, loadHunt, ensureAllowedDomain, resolveViewport } from "../config/loader.js";
 import { interpolateHunt } from "../config/interpolate.js";
 import {
@@ -303,6 +303,89 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Distill an attempt's `RunResult` into a lean {@link RetryAttempt} record (PROWL-033):
+ * status, duration, and — when it failed — the first failing step and its error. Falls
+ * back to a failed assertion's error when no step carried one.
+ */
+function toRetryAttempt(attempt: number, result: RunResult): RetryAttempt {
+  const record: RetryAttempt = {
+    attempt,
+    status: result.status,
+    durationMs: result.durationMs
+  };
+
+  if (result.status === "fail") {
+    const failedIndex = result.steps.findIndex((step) => step.status === "fail");
+    if (failedIndex >= 0) {
+      const failed = result.steps[failedIndex];
+      record.failedStep = { index: failedIndex, type: failed.type };
+      if (failed.error) {
+        record.error = failed.error;
+      }
+    }
+    if (!record.error) {
+      const failedAssertion = result.assertions.find((assertion) => assertion.status === "fail");
+      if (failedAssertion?.error) {
+        record.error = failedAssertion.error;
+      }
+    }
+  }
+
+  return record;
+}
+
+/** Compact description of an attempt's failure, e.g. "navigate (timeout)". */
+function describeAttemptFailure(attempt: RetryAttempt): string | undefined {
+  if (attempt.status !== "fail") {
+    return undefined;
+  }
+  const step = attempt.failedStep?.type;
+  if (step && attempt.error) {
+    return `${step} (${attempt.error})`;
+  }
+  return step ?? attempt.error;
+}
+
+/**
+ * Build the one-line retry headline: "Passed on attempt 2 of 3 — first failure: …" when
+ * a retry eventually succeeded, or "Failed after N attempts — first failure: …" when the
+ * retries were exhausted. The denominator is the total attempts the `retry` block allowed
+ * (`maxRetries + 1`), so an early pass still reads "of 3".
+ */
+function buildRetrySummary(attempts: RetryAttempt[], maxRetries: number): string {
+  const final = attempts[attempts.length - 1];
+  const firstFailure = describeAttemptFailure(attempts[0]);
+  const suffix = firstFailure ? ` — first failure: ${firstFailure}` : "";
+  if (final.status === "pass") {
+    return `Passed on attempt ${final.attempt} of ${maxRetries + 1}${suffix}`;
+  }
+  return `Failed after ${attempts.length} attempts${suffix}`;
+}
+
+/**
+ * Attach the collected per-attempt history (and its headline) to the final outcome and
+ * re-persist its reports (result.json, summary.md, and JUnit when enabled) so the
+ * diagnostics land on disk. Only called when retries actually ran, so a first-attempt
+ * pass keeps a clean, `retryHistory`-free artifact.
+ */
+function finalizeRetryOutcome(
+  outcome: { result: RunResult; runDir: string },
+  attempts: RetryAttempt[],
+  maxRetries: number,
+  junit: boolean
+): void {
+  outcome.result = writeReports(
+    outcome.runDir,
+    {
+      ...outcome.result,
+      retryHistory: attempts,
+      retrySummary: buildRetrySummary(attempts, maxRetries)
+    },
+    { junit }
+  );
+}
+
 export async function runHunt(
   options: RunOptions
 ): Promise<{ result: RunResult; runDir: string; steps: Step[] }> {
@@ -341,8 +424,10 @@ export async function runHunt(
 
   const maxRetries = hunt.retry?.maxRetries ?? 0;
   const retryDelay = hunt.retry?.delay ?? 0;
+  const junit = options.junit ?? config.artifacts.junit;
 
   let lastResult: { result: RunResult; runDir: string; steps: Step[] } | undefined;
+  const attempts: RetryAttempt[] = [];
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (attempt > 0 && retryDelay > 0) {
@@ -360,24 +445,22 @@ export async function runHunt(
       targetUrl,
       allowedDomains
     );
+    attempts.push(toRetryAttempt(attempt + 1, lastResult.result));
 
     if (lastResult.result.status === "pass") {
-      if (attempt > 0) {
-        lastResult.result.artifacts.summary =
-          `Passed on attempt ${attempt + 1} of ${maxRetries + 1}`;
+      if (attempts.length > 1) {
+        finalizeRetryOutcome(lastResult, attempts, maxRetries, junit);
       }
-      recordHistory(configDir, lastResult, config.history.maxRuns);
+      recordHistory(configDir, lastResult, config.history.maxRuns, attempts.length - 1);
       return lastResult;
     }
   }
 
-  if (maxRetries > 0 && lastResult) {
-    lastResult.result.artifacts.summary =
-      `Failed after ${maxRetries + 1} attempts`;
-  }
-
   if (lastResult) {
-    recordHistory(configDir, lastResult, config.history.maxRuns);
+    if (attempts.length > 1) {
+      finalizeRetryOutcome(lastResult, attempts, maxRetries, junit);
+    }
+    recordHistory(configDir, lastResult, config.history.maxRuns, attempts.length - 1);
   }
 
   return lastResult!;
@@ -695,7 +778,9 @@ async function runNativeHunt<TTarget extends NativeRunTarget>(
 
   const maxRetries = hunt.retry?.maxRetries ?? 0;
   const retryDelay = hunt.retry?.delay ?? 0;
+  const junit = options.junit ?? config.artifacts.junit;
   let lastResult: HuntOutcome | undefined;
+  const attempts: RetryAttempt[] = [];
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (attempt > 0 && retryDelay > 0) {
@@ -711,20 +796,21 @@ async function runNativeHunt<TTarget extends NativeRunTarget>(
       randomVars,
       config.guardrails.allowedApps
     );
+    attempts.push(toRetryAttempt(attempt + 1, lastResult.result));
     if (lastResult.result.status === "pass") {
-      if (attempt > 0) {
-        lastResult.result.artifacts.summary = `Passed on attempt ${attempt + 1} of ${maxRetries + 1}`;
+      if (attempts.length > 1) {
+        finalizeRetryOutcome(lastResult, attempts, maxRetries, junit);
       }
-      recordHistory(configDir, lastResult, config.history.maxRuns);
+      recordHistory(configDir, lastResult, config.history.maxRuns, attempts.length - 1);
       return lastResult;
     }
   }
 
-  if (maxRetries > 0 && lastResult) {
-    lastResult.result.artifacts.summary = `Failed after ${maxRetries + 1} attempts`;
-  }
   if (lastResult) {
-    recordHistory(configDir, lastResult, config.history.maxRuns);
+    if (attempts.length > 1) {
+      finalizeRetryOutcome(lastResult, attempts, maxRetries, junit);
+    }
+    recordHistory(configDir, lastResult, config.history.maxRuns, attempts.length - 1);
   }
   return lastResult!;
 }
@@ -732,7 +818,8 @@ async function runNativeHunt<TTarget extends NativeRunTarget>(
 function recordHistory(
   configDir: string,
   outcome: { result: RunResult; runDir: string },
-  maxRuns: number
+  maxRuns: number,
+  retries = 0
 ): void {
   try {
     const relativeRunDir = path.relative(configDir, outcome.runDir);
@@ -743,7 +830,9 @@ function recordHistory(
         status: outcome.result.status,
         durationMs: outcome.result.durationMs,
         startedAt: outcome.result.startedAt,
-        runDir: relativeRunDir || undefined
+        runDir: relativeRunDir || undefined,
+        // Omit when no retry ran so entries stay additive/backward-compatible.
+        retries: retries > 0 ? retries : undefined
       },
       maxRuns
     );

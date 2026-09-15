@@ -129,6 +129,12 @@ export type HistoryEntry = {
   durationMs: number;
   startedAt: string;
   runDir?: string;
+  /**
+   * Number of retry attempts beyond the first for this run (PROWL-033). Absent or
+   * `0` when the run did not retry — kept optional so older `history.json` files and
+   * runs of hunts without a `retry` block keep parsing unchanged.
+   */
+  retries?: number;
 };
 
 export type HistoryFile = {
@@ -305,6 +311,26 @@ export type TraceCorrelation = {
   header: string;
 };
 
+/**
+ * One attempt of a retried hunt (PROWL-033). Recorded per attempt so a passed-on-retry
+ * run keeps the reason each earlier attempt failed, helping tell a flaky test apart from
+ * a slow environment or a real regression.
+ */
+export type RetryAttempt = {
+  /** 1-based attempt number (attempt 1 is the initial run). */
+  attempt: number;
+  status: "pass" | "fail";
+  durationMs: number;
+  /** The first failing step on this attempt; absent when the attempt passed. */
+  failedStep?: {
+    /** 0-based index into the hunt's steps. */
+    index: number;
+    type: string;
+  };
+  /** Failure reason for this attempt; absent when it passed. */
+  error?: string;
+};
+
 export type RunResult = {
   status: "pass" | "fail";
   exitCode: 0 | 1;
@@ -316,6 +342,17 @@ export type RunResult = {
   assertions: AssertionResult[];
   artifacts: RunArtifacts;
   traceCorrelations?: TraceCorrelation[];
+  /**
+   * Per-attempt diagnostics (PROWL-033), present only when the hunt used `retry` and
+   * more than one attempt ran. Absent when no retry occurred so existing consumers and
+   * older run artifacts keep parsing. The last entry always matches the final result.
+   */
+  retryHistory?: RetryAttempt[];
+  /**
+   * Human-readable one-line retry outcome (PROWL-033), e.g. "Passed on attempt 2 of 3
+   * — first failure: navigate (timeout)". Present only alongside `retryHistory`.
+   */
+  retrySummary?: string;
 };
 
 export type CiHuntResult = {
