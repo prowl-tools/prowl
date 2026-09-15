@@ -32,9 +32,7 @@
  * Run locally with: npm run audit:licenses
  */
 import { execFileSync } from 'node:child_process';
-import { createRequire } from 'node:module';
-
-const require = createRequire(import.meta.url);
+import { pathToFileURL } from 'node:url';
 
 /**
  * Permissive / public-domain-equivalent SPDX identifiers we accept. Anything not
@@ -75,6 +73,7 @@ function collectCorePackages() {
   );
   const tree = JSON.parse(raw);
   const set = new Set();
+  /** Walk a resolved npm dependency node and collect reachable packages. */
   const visit = (node) => {
     const deps = node.dependencies || {};
     for (const [name, info] of Object.entries(deps)) {
@@ -91,8 +90,8 @@ function collectCorePackages() {
 }
 
 /** license-checker license data for every installed package: { "name@ver": {licenses} }. */
-function collectLicenseData() {
-  const checker = require('license-checker-rseidelsohn');
+async function collectLicenseData() {
+  const checker = await import('license-checker-rseidelsohn');
   return new Promise((resolve, reject) => {
     checker.init({ start: process.cwd() }, (err, packages) => {
       if (err) reject(err);
@@ -118,8 +117,10 @@ function isExpressionAllowed(expr) {
     .split(/\s+/)
     .filter(Boolean);
   let pos = 0;
+  let valid = true;
   const peek = () => tokens[pos];
 
+  /** Parse OR chains, the lowest-precedence SPDX boolean operator. */
   function parseOr() {
     let value = parseAnd();
     while (peek() === 'OR') {
@@ -129,6 +130,7 @@ function isExpressionAllowed(expr) {
     }
     return value;
   }
+  /** Parse AND chains, which bind tighter than OR. */
   function parseAnd() {
     let value = parseAtom();
     while (peek() === 'AND') {
@@ -138,13 +140,21 @@ function isExpressionAllowed(expr) {
     }
     return value;
   }
+  /** Parse license atoms and parenthesized groups while tracking malformed tokens. */
   function parseAtom() {
     const tok = tokens[pos++];
     if (tok === undefined) return false;
     let value;
     if (tok === '(') {
       value = parseOr();
-      if (peek() === ')') pos++;
+      if (peek() === ')') {
+        pos++;
+      } else {
+        valid = false;
+      }
+    } else if (tok === ')' || tok === 'AND' || tok === 'OR' || tok === 'WITH') {
+      valid = false;
+      value = false;
     } else {
       value = ALLOWED.has(normalizeAtom(tok));
     }
@@ -152,7 +162,18 @@ function isExpressionAllowed(expr) {
     // verdict stands, but the exception must be reviewed like any atom would —
     // so treat it as not-allowed unless a human adds an EXCEPTIONS entry.
     if (peek() === 'WITH') {
-      pos += 2;
+      pos++;
+      const exception = tokens[pos++];
+      if (
+        exception === undefined ||
+        exception === '(' ||
+        exception === ')' ||
+        exception === 'AND' ||
+        exception === 'OR' ||
+        exception === 'WITH'
+      ) {
+        valid = false;
+      }
       return false;
     }
     return value;
@@ -162,7 +183,7 @@ function isExpressionAllowed(expr) {
   const result = parseOr();
   // Fail closed on malformed expressions: leftover tokens mean we did not
   // understand the whole expression, so a human must review it.
-  return pos === tokens.length ? result : false;
+  return valid && pos === tokens.length ? result : false;
 }
 
 /** A package's license field may be a string or an array; every entry must pass. */
@@ -208,7 +229,11 @@ async function main() {
   console.log('\n✓ All core runtime dependencies use allowed licenses.');
 }
 
-main().catch((err) => {
-  console.error('License audit failed to run:', err);
-  process.exit(1);
-});
+export { isExpressionAllowed, isLicenseAllowed };
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => {
+    console.error('License audit failed to run:', err);
+    process.exit(1);
+  });
+}
