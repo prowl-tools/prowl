@@ -272,6 +272,13 @@ export function createPlaywrightDriver(page: Page): SessionDriver {
       await page.waitForLoadState("networkidle", { timeout: options?.timeout });
     },
 
+    async waitForResponse(
+      predicate: (response: DriverResponse) => boolean,
+      options?: { timeout?: number }
+    ): Promise<void> {
+      await page.waitForResponse((response) => predicate(response), { timeout: options?.timeout });
+    },
+
     evaluate<R = unknown, A = unknown>(
       pageFunction: string | ((arg: A) => R | Promise<R>),
       arg?: A

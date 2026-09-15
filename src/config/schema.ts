@@ -186,6 +186,26 @@ export const waitForNetworkIdleStepSchema = z
     waitForNetworkIdle: z.object({ timeout: z.number().optional() }).strict()
   })
   .strict();
+export const waitForResponseStepSchema = z
+  .object({
+    waitForResponse: z
+      .object({
+        // Matched against each response URL as a glob (`*`/`**` match any run of
+        // characters including `/`, `?` matches one character); matching is
+        // unanchored, so a pattern with no wildcards behaves as a substring match.
+        url: z
+          .string()
+          .min(1)
+          .describe(
+            "URL glob to wait for; unanchored, so a wildcard-free pattern is a substring match"
+          ),
+        // Optional status filter: only resolve on a response with this exact HTTP status.
+        status: z.number().int().optional(),
+        timeout: z.number().optional()
+      })
+      .strict()
+  })
+  .strict();
 export const selectOptionStepSchema = z
   .object({
     selectOption: z.object({ selector: z.string().min(1), value: z.string() }).strict()
@@ -445,6 +465,7 @@ export const stepSchema: z.ZodType<Step> = z.union([
   waitForSelectorStepSchema,
   waitForUrlStepSchema,
   waitForNetworkIdleStepSchema,
+  waitForResponseStepSchema,
   hoverStepSchema,
   scrollStepSchema,
   scrollToStepSchema,

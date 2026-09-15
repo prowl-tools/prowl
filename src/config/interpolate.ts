@@ -238,6 +238,18 @@ function interpolateStep(
   if ("waitForNetworkIdle" in step) {
     return { waitForNetworkIdle: { timeout: step.waitForNetworkIdle.timeout } };
   }
+  if ("waitForResponse" in step) {
+    const urlResult = interpolateString(step.waitForResponse.url, vars);
+    return {
+      waitForResponse: {
+        url: urlResult.value,
+        ...(step.waitForResponse.status !== undefined
+          ? { status: step.waitForResponse.status }
+          : {}),
+        timeout: step.waitForResponse.timeout
+      }
+    };
+  }
   if ("hover" in step) {
     const selectorResult = interpolateString(step.hover.selector, vars);
     return { hover: { selector: selectorResult.value } };

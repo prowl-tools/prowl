@@ -389,7 +389,7 @@ macOS target (with a clear error), and `prowl login` / URL guardrails do not app
 
 | Portable (web + macOS) | Web-only (rejected on macOS) |
 |---|---|
-| `click`, `fill`, `type`, `press` | `navigate`, `waitForUrl`, `waitForNetworkIdle` |
+| `click`, `fill`, `type`, `press` | `navigate`, `waitForUrl`, `waitForNetworkIdle`, `waitForResponse` |
 | `wait`, `waitForSelector` | `mockRoute` / `unmockRoute` |
 | `assert: visible` / `notVisible` | `evalScript`, `runScript` |
 | `screenshot`, `assertScreenshot` | `onDialog`, `select` / `selectOption` |
@@ -664,6 +664,21 @@ Wait for all network requests to complete.
 - waitForNetworkIdle:
     timeout: 5000
 ```
+
+### waitForResponse
+
+Wait for a specific network response before continuing — more precise than `waitForNetworkIdle`, which waits for *all* traffic to settle.
+
+```yaml
+- waitForResponse:
+    url: "**/api/orders"
+    status: 200
+    timeout: 10000
+```
+
+- `url` (required) is matched against each response URL as a glob: `*`/`**` match any run of characters (including `/`) and `?` matches a single character. Matching is unanchored, so a pattern with no wildcards behaves as a substring match (e.g. `/api/orders` matches `https://shop.test/api/orders?page=2`).
+- `status` (optional) resolves the step only on a response with that exact HTTP status.
+- `timeout` (optional, milliseconds) fails the step with a clear message if no matching response arrives in time.
 
 ### onDialog
 
@@ -1395,7 +1410,7 @@ Portable steps run on the Android target; web-only steps are rejected up front
 
 | Portable (Android) | Not supported on Android |
 |---|---|
-| `click`, `fill`, `type`, `press` | `navigate`, `waitForUrl`, `waitForNetworkIdle` |
+| `click`, `fill`, `type`, `press` | `navigate`, `waitForUrl`, `waitForNetworkIdle`, `waitForResponse` |
 | `wait`, `waitForSelector` | `mockRoute` / `unmockRoute`, `evalScript`, `runScript` |
 | `assert: visible` / `notVisible` | `onDialog`, `select` / `selectOption`, `setInputFiles` |
 | `screenshot`, `assertScreenshot` | `waitForDownload`, `scroll`, `assert: urlIncludes` / `urlEquals` |
@@ -1545,7 +1560,7 @@ clear error), and URL guardrails do not apply.
 
 | Portable (iOS) | Not supported on iOS |
 |---|---|
-| `click`, `fill`, `type`, `press` | `navigate`, `waitForUrl`, `waitForNetworkIdle` |
+| `click`, `fill`, `type`, `press` | `navigate`, `waitForUrl`, `waitForNetworkIdle`, `waitForResponse` |
 | `wait`, `waitForSelector` | `mockRoute` / `unmockRoute`, `evalScript`, `runScript` |
 | `assert: visible` / `notVisible` | `onDialog`, `select` / `selectOption`, `setInputFiles` |
 | `screenshot`, `assertScreenshot` | `waitForDownload`, `scroll`, `assert: urlIncludes` / `urlEquals` |

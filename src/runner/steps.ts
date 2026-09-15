@@ -5,7 +5,7 @@ import path from "node:path";
 // (src/browser/playwright-driver.ts); this import is erased at build.
 import type { Page } from "playwright";
 import { createPlaywrightDriver } from "../browser/controller.js";
-import type { DriverCapability, DriverDownload, SessionDriver } from "../browser/driver.js";
+import type { DriverCapability, DriverDownload, DriverResponse, SessionDriver } from "../browser/driver.js";
 import type { Step, StepResult, Target } from "../types/index.js";
 import { loadHunt } from "../config/loader.js";
 import { interpolateHunt } from "../config/interpolate.js";
@@ -95,6 +95,7 @@ function getStepType(step: Step): string {
   if ("waitForSelector" in step) return "waitForSelector";
   if ("waitForUrl" in step) return "waitForUrl";
   if ("waitForNetworkIdle" in step) return "waitForNetworkIdle";
+  if ("waitForResponse" in step) return "waitForResponse";
   if ("hover" in step) return "hover";
   if ("scroll" in step) return "scroll";
   if ("scrollTo" in step) return "scrollTo";
@@ -110,6 +111,24 @@ function getStepType(step: Step): string {
   if ("copyText" in step) return "copyText";
   if ("waitForDownload" in step) return "waitForDownload";
   return "step";
+}
+
+/**
+ * Match a network response URL against a `waitForResponse` `url` pattern.
+ *
+ * The pattern is treated as a glob: `*` (and `**`) match any run of characters
+ * (including `/`), and `?` matches exactly one character. Every other character
+ * is matched literally (regex metacharacters are escaped). Matching is
+ * UNANCHORED — the compiled pattern only has to be found somewhere in the URL —
+ * so a pattern with no wildcards behaves as a plain substring match
+ * (e.g. `/api/orders` matches `https://x.test/api/orders?page=2`).
+ */
+export function urlMatchesResponsePattern(pattern: string, url: string): boolean {
+  const regexBody = pattern
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&") // escape every regex metacharacter
+    .replace(/\\\*/g, ".*") // then re-enable glob `*`/`**` as "any run of characters"
+    .replace(/\\\?/g, "."); // and glob `?` as "any single character"
+  return new RegExp(regexBody).test(url);
 }
 
 const RUNTIME_VAR_PATTERN = /\{\{([A-Z0-9_]+)\}\}/g;
@@ -152,6 +171,15 @@ function applyRuntimeVars(step: Step, vars: Map<string, string>): Step {
   }
   if ("waitForSelector" in step) {
     return { waitForSelector: { selector: sub(step.waitForSelector.selector), timeout: step.waitForSelector.timeout } };
+  }
+  if ("waitForResponse" in step) {
+    return {
+      waitForResponse: {
+        url: sub(step.waitForResponse.url),
+        ...(step.waitForResponse.status !== undefined ? { status: step.waitForResponse.status } : {}),
+        ...(step.waitForResponse.timeout !== undefined ? { timeout: step.waitForResponse.timeout } : {})
+      }
+    };
   }
   if ("evalScript" in step) {
     if (typeof step.evalScript === "string") return { evalScript: sub(step.evalScript) };
@@ -914,6 +942,32 @@ const STEP_HANDLERS: Record<string, StepHandler> = {
       return {
         kind: "result",
         result: { type: "waitForUrl", status: "pass", durationMs: Date.now() - h.stepStart, value }
+      };
+    }
+  },
+
+  waitForResponse: {
+    capabilities: ["response", "wait"],
+    run: async (h) => {
+      if (!("waitForResponse" in h.step)) unknownStep();
+      const { url: pattern, status, timeout } = h.step.waitForResponse;
+      try {
+        await h.driver.waitForResponse(
+          (response: DriverResponse) =>
+            urlMatchesResponsePattern(pattern, response.url()) &&
+            (status === undefined || response.status() === status),
+          { timeout }
+        );
+      } catch {
+        const statusPart = status !== undefined ? ` with status ${status}` : "";
+        const timeoutPart = timeout !== undefined ? ` within ${timeout}ms` : "";
+        throw new Error(
+          `waitForResponse: no response matching "${pattern}"${statusPart} was received${timeoutPart}.`
+        );
+      }
+      return {
+        kind: "result",
+        result: { type: "waitForResponse", status: "pass", durationMs: Date.now() - h.stepStart, value: pattern }
       };
     }
   },
