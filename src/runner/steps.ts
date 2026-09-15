@@ -123,12 +123,17 @@ function getStepType(step: Step): string {
  * so a pattern with no wildcards behaves as a plain substring match
  * (e.g. `/api/orders` matches `https://x.test/api/orders?page=2`).
  */
-export function urlMatchesResponsePattern(pattern: string, url: string): boolean {
+export function compileResponseUrlMatcher(pattern: string): (url: string) => boolean {
   const regexBody = pattern
     .replace(/[.*+?^${}()|[\]\\]/g, "\\$&") // escape every regex metacharacter
     .replace(/\\\*/g, ".*") // then re-enable glob `*`/`**` as "any run of characters"
     .replace(/\\\?/g, "."); // and glob `?` as "any single character"
-  return new RegExp(regexBody).test(url);
+  const regex = new RegExp(regexBody);
+  return (url: string) => regex.test(url);
+}
+
+export function urlMatchesResponsePattern(pattern: string, url: string): boolean {
+  return compileResponseUrlMatcher(pattern)(url);
 }
 
 const RUNTIME_VAR_PATTERN = /\{\{([A-Z0-9_]+)\}\}/g;
@@ -951,10 +956,11 @@ const STEP_HANDLERS: Record<string, StepHandler> = {
     run: async (h) => {
       if (!("waitForResponse" in h.step)) unknownStep();
       const { url: pattern, status, timeout } = h.step.waitForResponse;
+      const matchesResponseUrl = compileResponseUrlMatcher(pattern);
       try {
         await h.driver.waitForResponse(
           (response: DriverResponse) =>
-            urlMatchesResponsePattern(pattern, response.url()) &&
+            matchesResponseUrl(response.url()) &&
             (status === undefined || response.status() === status),
           { timeout }
         );

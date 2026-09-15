@@ -186,6 +186,10 @@ export const waitForNetworkIdleStepSchema = z
     waitForNetworkIdle: z.object({ timeout: z.number().optional() }).strict()
   })
   .strict();
+
+const waitForResponseStatusSchema = z.number().int().min(100).max(599);
+const waitForResponseTimeoutSchema = z.number().int().min(0).finite();
+
 export const waitForResponseStepSchema = z
   .object({
     waitForResponse: z
@@ -200,8 +204,8 @@ export const waitForResponseStepSchema = z
             "URL glob to wait for; unanchored, so a wildcard-free pattern is a substring match"
           ),
         // Optional status filter: only resolve on a response with this exact HTTP status.
-        status: z.number().int().optional(),
-        timeout: z.number().optional()
+        status: waitForResponseStatusSchema.optional(),
+        timeout: waitForResponseTimeoutSchema.optional()
       })
       .strict()
   })

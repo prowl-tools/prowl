@@ -224,6 +224,44 @@ describe("huntSchema new step types", () => {
       huntSchema.parse({ steps: [{ waitForResponse: { url: "/api", status: 200.5 } }] })
     ).toThrow();
   });
+
+  it("accepts waitForResponse status boundary values", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ waitForResponse: { url: "/api", status: 100 } }] })
+    ).not.toThrow();
+    expect(() =>
+      huntSchema.parse({ steps: [{ waitForResponse: { url: "/api", status: 599 } }] })
+    ).not.toThrow();
+  });
+
+  it("rejects waitForResponse status values outside the HTTP range", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ waitForResponse: { url: "/api", status: 99 } }] })
+    ).toThrow();
+    expect(() =>
+      huntSchema.parse({ steps: [{ waitForResponse: { url: "/api", status: 600 } }] })
+    ).toThrow();
+  });
+
+  it("accepts waitForResponse timeout 0 as no timeout", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ waitForResponse: { url: "/api", timeout: 0 } }] })
+    ).not.toThrow();
+  });
+
+  it("rejects invalid waitForResponse timeouts", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ waitForResponse: { url: "/api", timeout: -1 } }] })
+    ).toThrow();
+    expect(() =>
+      huntSchema.parse({
+        steps: [{ waitForResponse: { url: "/api", timeout: Number.POSITIVE_INFINITY } }]
+      })
+    ).toThrow();
+    expect(() =>
+      huntSchema.parse({ steps: [{ waitForResponse: { url: "/api", timeout: 100.5 } }] })
+    ).toThrow();
+  });
 });
 
 describe("huntSchema tags and retry", () => {
