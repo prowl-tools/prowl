@@ -48,16 +48,6 @@ enrollment completes, the remaining steps are cert + API key, the six secrets, a
 
 ## Medium Priority
 
-{PROWL-011} **LEGAL-002: Add Dependency License Audit to CI**
-   All direct dependencies are confirmed clean — MIT (commander, chalk, zod, ora), ISC (yaml), BSD-2-Clause (dotenv), Apache 2.0 (playwright, typescript). However, transitive dependencies can introduce GPL-licensed packages. Research shows 7.3% of npm packages have license incompatibilities through transitive deps.
-
-**Action**: Add `license-checker` to CI pipeline:
-```bash
-npx license-checker --summary --exclude 'MIT,ISC,Apache-2.0,BSD-2-Clause,BSD-3-Clause'
-```
-
----
-
 {PROWL-017} **P4-006: `waitForResponse` Step Type**
    Wait for a specific network response before continuing. More precise than `waitForNetworkIdle`.
 

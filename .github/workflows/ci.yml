@@ -9,11 +9,16 @@ on:
     # re-runs CI, which is what triggers the workflow_run-chained prowl-review (#64).
     types: [opened, synchronize, ready_for_review, reopened]
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -29,3 +34,21 @@ jobs:
 
       - name: Test
         run: npm test
+
+  license-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci --omit=optional --ignore-scripts
+
+      # Fails the build if any core runtime dependency introduces a
+      # non-permissive (e.g. GPL/AGPL) license — PROWL-011 / LEGAL-002.
+      - name: Audit dependency licenses
+        run: npm run audit:licenses

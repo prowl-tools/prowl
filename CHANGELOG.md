@@ -4,6 +4,21 @@ All notable changes to Prowl will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Dependency license audit in CI (PROWL-011 / LEGAL-002).** A new
+  `license-audit` job in the CI workflow runs `npm run audit:licenses` and fails
+  the build if any package in Prowl's core runtime dependency tree carries a
+  non-permissive license (e.g. GPL/AGPL/LGPL), guarding against a transitive
+  dependency silently introducing an incompatible copyleft license. The check is
+  driven by a committed, SPDX-expression-aware script
+  (`scripts/audit-licenses.mjs`) backed by a pinned `license-checker-rseidelsohn`
+  devDependency — no floating `npx` fetch. It is scoped to `dependencies` (what
+  the desktop-first and web CLI actually ships and loads); build-only
+  `devDependencies` and the experimental-mobile `optionalDependencies` (appium)
+  are intentionally excluded, as documented in the script. The current core tree
+  is fully permissive (MIT / ISC / Apache-2.0 / BSD-2-Clause / BSD-3-Clause), so
+  no license exceptions were needed.
+
 ## [0.1.9] - 2026-09-13
 
 ### Added
