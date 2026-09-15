@@ -30,12 +30,12 @@ before the {PROWL-078} distribution push invests further in the brand.
    real work of this item.
 
 **Found during**: macdriver-distribution release planning (2026-09-01)
-**Status (2026-09-11)**: organization verified with Apple Business, and the Apple Developer
-Program **organization enrollment is submitted and awaiting Apple's review** (expect a
-verification call to the business phone; annual fee is paid after approval). Repo side is
-fully staged: both version pins are `0.1.0` and the release workflow is merged — once
-enrollment completes, the remaining steps are cert + API key, the six secrets, and the
-`macdriver-v0.1.0` tag.
+**Status (2026-09-15)**: Apple Developer Program **organization enrollment approved** for
+Genkei Labs. Repo side is fully staged: both version pins are `0.1.0` and the release
+workflow is merged. Remaining (owner, in order): pay/confirm the annual fee + license
+agreement, create the Developer ID Application cert, create the App Store Connect API key
+(Developer role), provision the six secrets per `macdriver/RELEASING.md`, then tag
+`macdriver-v0.1.0` and verify notarization `Accepted` + a live `prowl macdriver install`.
 **Prerequisite chain / Acceptance Criteria** (in order):
 - Legal entity for the organization confirmed/registered (Apple rejects sole proprietorships/DBAs for org accounts)
 - D-U-N-S number for the entity (free via Dun & Bradstreet, ~days; requires a business contact phone)
