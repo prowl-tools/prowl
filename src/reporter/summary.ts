@@ -47,7 +47,7 @@ export function writeSummary(runDir: string, result: RunResult): string {
     lines.push("");
     lines.push("## Retries");
     if (result.retrySummary) {
-      lines.push(result.retrySummary);
+      lines.push(escapeMd(result.retrySummary));
     }
     for (const attempt of result.retryHistory) {
       lines.push(formatRetryAttempt(attempt));

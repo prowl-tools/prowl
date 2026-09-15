@@ -17,9 +17,11 @@ All notable changes to Prowl will be documented in this file.
   `prowl history` adds a `Retries` column plus a retry-frequency line
   (`Retried in N of M runs`) so a flaky hunt is easy to tell apart from a slow
   environment or a real regression over time. `history.json` records a per-run
-  `retries` count (omitted when zero; older files without it still load). JUnit
-  continues to report the final attempt's outcome — per-attempt history lives in
-  `result.json`, not the XML.
+  `retries` count (omitted when zero; older files without it still load, while
+  malformed negative or fractional retry counts are ignored). Markdown reports
+  escape retry headlines before writing `summary.md`. JUnit continues to report
+  the final attempt's outcome — per-attempt history lives in `result.json`, not
+  the XML.
 - **`waitForResponse` step type (PROWL-017).** Wait for a specific network
   response before continuing — more precise than `waitForNetworkIdle`, which
   waits for *all* traffic to settle. The `url` field is matched against each

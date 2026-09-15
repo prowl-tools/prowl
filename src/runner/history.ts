@@ -27,7 +27,9 @@ function isHistoryEntry(value: unknown): value is HistoryEntry {
     (entry.runDir === undefined || typeof entry.runDir === "string") &&
     // Optional (PROWL-033): older history.json files predate `retries`.
     (entry.retries === undefined ||
-      (typeof entry.retries === "number" && Number.isFinite(entry.retries)))
+      (typeof entry.retries === "number" &&
+        Number.isInteger(entry.retries) &&
+        entry.retries >= 0))
   );
 }
 

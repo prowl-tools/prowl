@@ -181,7 +181,9 @@ describe("readHistory", () => {
             { hunt: "legacy", status: "pass", durationMs: 10, startedAt: "2026-01-01T00:00:00.000Z" },
             { hunt: "retried", status: "pass", durationMs: 20, startedAt: "2026-01-02T00:00:00.000Z", retries: 2 },
             // A non-numeric retries value is rejected like any other malformed field.
-            { hunt: "bad-retries", status: "pass", durationMs: 30, startedAt: "2026-01-03T00:00:00.000Z", retries: "2" }
+            { hunt: "bad-retries", status: "pass", durationMs: 30, startedAt: "2026-01-03T00:00:00.000Z", retries: "2" },
+            { hunt: "negative-retries", status: "pass", durationMs: 40, startedAt: "2026-01-04T00:00:00.000Z", retries: -1 },
+            { hunt: "fractional-retries", status: "pass", durationMs: 50, startedAt: "2026-01-05T00:00:00.000Z", retries: 1.5 }
           ]
         })
       );
