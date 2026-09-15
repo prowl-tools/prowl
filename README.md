@@ -1029,6 +1029,39 @@ tracing:
 This is a correlation bridge only — Prowl does not generate or propagate its own
 spans. When the app emits no trace headers, nothing is recorded (no noise).
 
+### Retry Diagnostics (why a retried hunt passed)
+
+When a hunt sets a `retry` block and eventually passes — or exhausts its
+attempts — Prowl records what each attempt did instead of retrying silently:
+
+```yaml
+# In a hunt file
+retry:
+  maxRetries: 2   # up to 2 extra attempts (3 total)
+  delay: 500      # optional ms to wait between attempts
+```
+
+The final attempt's `result.json` (and the returned run result) then carries:
+
+- `retryHistory` — one record per attempt: its `attempt` number, `status`,
+  `durationMs`, the first `failedStep` (`index` + `type`), and the `error`.
+- `retrySummary` — a one-line headline, e.g.
+  `Passed on attempt 2 of 3 — first failure: navigate (timeout)`, or
+  `Failed after 3 attempts — first failure: …` when the retries were exhausted.
+
+Both fields appear **only** when more than one attempt ran, so a hunt that passes
+on the first try (and any run artifact written before this feature) stays
+unchanged and keeps parsing. `summary.md` gains a matching **Retries** section
+with the headline and a per-attempt breakdown, and the `prowl run` summary prints
+the headline. JUnit continues to report the final attempt's outcome — the
+per-attempt history lives in `result.json`, not the XML — so a retried-and-passed
+hunt is a green testcase for CI while the diagnostics remain available alongside
+it.
+
+This is what lets you distinguish a **flaky test** (passes on retry, intermittent
+first-attempt failures) from a **slow environment** (retries needed but the same
+step lags) from a **real regression** (all attempts fail the same way).
+
 ---
 
 ## CLI Reference
@@ -1112,10 +1145,11 @@ remedy.
 ### Run History
 
 Every `prowl run` and `prowl ci` appends an entry to `.prowl/history.json`
-with the hunt name, status, start time, duration, and run directory. Retention
-is capped per hunt by `history.maxRuns` (default 100) — once a hunt exceeds the
-cap, its oldest entries are dropped on the next write. Other hunts are not
-affected.
+with the hunt name, status, start time, duration, run directory, and — when the
+run used `retry` — a `retries` count (the number of extra attempts beyond the
+first; omitted when the run passed on its first attempt). Retention is capped
+per hunt by `history.maxRuns` (default 100) — once a hunt exceeds the cap, its
+oldest entries are dropped on the next write. Other hunts are not affected.
 
 ```yaml
 # In .prowl/config.yml
@@ -1124,7 +1158,11 @@ history:
 ```
 
 Use `prowl history <hunt-name>` for a quick status/duration table, or
-`--json` to feed the entries into dashboards, flake detectors, or agents.
+`--json` to feed the entries into dashboards, flake detectors, or agents. The
+table includes a **Retries** column and a retry-frequency line
+(`Retried in N of M runs`) so you can tell a flaky hunt apart from a slow
+environment or a real regression at a glance. History from before retry
+tracking (entries without a `retries` field) still loads and reads as `0`.
 
 ### Failure Clustering
 
