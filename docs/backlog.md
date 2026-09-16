@@ -48,20 +48,6 @@ agreement, create the Developer ID Application cert, create the App Store Connec
 
 ## Medium Priority
 
-{PROWL-029} **P6-009: Persona-Specific Onboarding Paths**
-   `prowl init` currently gives everyone the same 8 example hunts. Different users need different starting points. A solo developer testing a side project, a QA team adding regression tests, and an AI agent builder integrating Prowl all have different first-run needs.
-
-**Found during**: Gap analysis (2026-02-16)
-**Partial progress (2026-02-17; updated 2026-08-26)**: `prowl init` simplified from 8 example hunts to a lean starter set (`hello.yml` + `login-flow.yml`). The community hub has been retired, so starters ship in the CLI and curated worked examples live in the docs site — there is no hub and no CLI template registry. Remaining: preset-based onboarding paths (`--preset solo|team|ci|agent`).
-**Acceptance Criteria**:
-- `prowl init` prompts for use case (or accepts `--preset`): `solo`, `team`, `ci`, `agent`
-- Each preset generates tailored example hunts, config, and README hints
-- `solo`: minimal config, 2 simple example hunts, quick-start focus
-- `team`: full config with common guardrails, example hunts for auth/CRUD/forms
-- `ci`: config with `artifacts.junit: true`, GitHub Actions workflow template, CI-ready examples
-- `agent`: config with `--json` examples, library API usage guide, `.env` template for secrets
-- Existing behavior preserved as default when no preset is selected
-
 ## Low Priority
 
 {PROWL-003} **P2-008: `prowl ci --fail-fast` Option**
