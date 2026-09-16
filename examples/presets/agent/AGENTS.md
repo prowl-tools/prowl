@@ -6,8 +6,11 @@ documents the machine-readable surface an AI agent or script should use to drive
 Prowl programmatically. Everything here is a stable contract: prefer `--json`
 output and exit codes over parsing human-formatted text.
 
-Prowl has no library API — drive it through the CLI (with `--json`) or the MCP
-server described below.
+The CLI (with `--json`) and the MCP server described below are the primary,
+documented surfaces. The `prowl-tools` package also exports a Node API
+(`import { runHunt, runSuite, listHunts } from "prowl-tools"`) for embedding
+Prowl in a script; it is typed but not yet documented, so prefer the CLI/MCP
+contract where either works.
 
 ## Commands with JSON output
 
