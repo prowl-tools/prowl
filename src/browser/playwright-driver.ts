@@ -156,14 +156,21 @@ export async function finalizeVideo(
     return undefined;
   }
   const fileName = "video.webm";
+  let saved = false;
   try {
     await session.video.saveAs(path.join(runDir, fileName));
-    await session.video.delete();
-    return fileName;
+    saved = true;
   } catch (error) {
     console.warn(`Failed to save run video: ${formatError(error)}`);
-    return undefined;
   }
+
+  try {
+    await session.video.delete();
+  } catch (error) {
+    console.warn(`Failed to delete temporary run video: ${formatError(error)}`);
+  }
+
+  return saved ? fileName : undefined;
 }
 
 /** Persist the session's storage state (cookies + localStorage) to disk. */

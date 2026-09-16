@@ -337,6 +337,21 @@ describe("ci command", () => {
     }
   });
 
+  it("leaves junit undefined when --junit is absent so config is honored", async () => {
+    mockLoadConfig.mockReturnValue({ config: {}, configDir: "/tmp/.prowl" });
+    mockListHunts.mockReturnValue(["homepage", "login-flow"]);
+    mockRunHunt
+      .mockResolvedValueOnce(makeRunResult("homepage", "pass"))
+      .mockResolvedValueOnce(makeRunResult("login-flow", "pass"));
+
+    const cmd = buildCiCommand();
+    await cmd.parseAsync(["node", "prowl"]);
+
+    for (const call of mockRunHunt.mock.calls) {
+      expect(call[0]).toHaveProperty("junit", undefined);
+    }
+  });
+
   it("outputs valid JSON with --json flag", async () => {
     mockLoadConfig.mockReturnValue({ config: {}, configDir: "/tmp/.prowl" });
     mockListHunts.mockReturnValue(["homepage", "login-flow"]);

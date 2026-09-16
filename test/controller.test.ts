@@ -394,7 +394,27 @@ describe("finalizeVideo (PROWL-027)", () => {
       );
       const name = await finalizeVideo(session, opts.runDir);
       expect(name).toBeUndefined();
+      expect(session.video?.delete).toHaveBeenCalled();
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("disk full"));
+    } finally {
+      warnSpy.mockRestore();
+      fs.rmSync(opts.runDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns the saved video when deleting the temporary source fails", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const opts = makeOptions({ recordVideo: true });
+    try {
+      const session = await launchBrowser(opts);
+      await closeBrowser(session);
+      (session.video?.delete as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new Error("unlink failed")
+      );
+      const name = await finalizeVideo(session, opts.runDir);
+      expect(name).toBe("video.webm");
+      expect(session.video?.saveAs).toHaveBeenCalledWith(path.join(opts.runDir, "video.webm"));
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("unlink failed"));
     } finally {
       warnSpy.mockRestore();
       fs.rmSync(opts.runDir, { recursive: true, force: true });
