@@ -340,6 +340,9 @@ async function promptForPreset(): Promise<PresetName | undefined> {
 
     const answer = await new Promise<string>((resolve, reject) => {
       rl.once("error", reject);
+      // Ctrl+D (EOF) closes the interface without ever invoking the question
+      // callback — resolve to the standard scaffold instead of hanging.
+      rl.once("close", () => resolve(""));
       rl.question("Enter choice [1]: ", resolve);
     });
 
