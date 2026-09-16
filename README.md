@@ -174,6 +174,35 @@ target is experimental — see [macOS Target](#macos-target-experimental).
   Desktop-first? .prowl/hunts/macos-hello.yml is a macOS starter (experimental — see its comments to enable).
 ```
 
+#### Onboarding presets
+
+Different projects want different starting points. Pass `--preset` to scaffold a
+tailored set of config, hunts, and hints instead of the standard four:
+
+```bash
+prowl init --preset solo    # Minimal config + 2 simple hunts — quick start for a side project
+prowl init --preset team    # Full guardrails + auth/CRUD/form hunts — a shared team baseline
+prowl init --preset ci      # JUnit on + CI-ready hunts + a GitHub Actions workflow template
+prowl init --preset agent   # Config for programmatic use + AGENTS.md (JSON/MCP surface) + .env.example
+```
+
+Run `prowl init` with no `--preset` in an interactive terminal and Prowl shows a
+short numbered menu of these presets plus **standard** (the default set). Press
+Enter to take the standard scaffold; a non-interactive shell (like CI) always
+uses it, so scripted `prowl init` behaves exactly as before.
+
+Every preset writes only inside `.prowl/`. The `ci` preset therefore ships its
+workflow as `.prowl/github-workflow.example.yml` and tells you to copy it into
+place:
+
+```bash
+cp .prowl/github-workflow.example.yml .github/workflows/prowl.yml
+```
+
+The `agent` preset adds an `AGENTS.md` documenting the machine-readable surface
+(`prowl run <hunt> --json`, `prowl ci --json`, exit codes, and the `prowl mcp`
+server) plus a `.env.example` secrets template to copy to `.prowl/.env`.
+
 ### 3. Configure
 
 Edit `.prowl/config.yml` to point at your app:
@@ -1114,6 +1143,7 @@ prowl login
 # Initialize — create .prowl directory with examples
 prowl init
 prowl init --force                      # Overwrite existing
+prowl init --preset solo                # Persona preset: solo | team | ci | agent
 
 # Doctor — check the environment is ready to run hunts
 prowl doctor

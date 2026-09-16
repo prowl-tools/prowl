@@ -5,6 +5,19 @@ All notable changes to Prowl will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Persona-specific onboarding presets (PROWL-029).** `prowl init --preset <name>`
+  scaffolds a starter set tailored to how you work: `solo` (a lean config and two
+  simple hunts for a quick start), `team` (full guardrails plus auth/CRUD/form
+  hunts), `ci` (JUnit reporting on, CI-ready hunts, and a copy-in GitHub Actions
+  workflow at `.prowl/github-workflow.example.yml`), and `agent` (a config for
+  programmatic use, an assertions hunt, a `.env.example`, and an `AGENTS.md`
+  documenting the `--json`/exit-code/`prowl mcp` surface). Run `prowl init` with no
+  flag in a terminal and a short numbered menu offers the four presets plus the
+  standard set; pressing Enter, a non-interactive shell, or an unknown choice all
+  fall back to the standard scaffold — so existing behavior is unchanged. Every
+  preset (and `prowl doctor --fix`) goes through the same staged, rollback-safe
+  writer that refuses to touch anything outside `.prowl/`. Unknown `--preset`
+  values exit 1 with the list of valid names.
 - **Video recording (PROWL-027).** Opt in to record the whole hunt run as a video
   for sharing failures with non-technical stakeholders. Enable it per-project with
   `artifacts.video: true` (default off) or per-run with `prowl run <hunt> --video`
