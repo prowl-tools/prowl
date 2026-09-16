@@ -9,6 +9,11 @@ vi.mock("playwright", () => {
       start: vi.fn(async () => undefined),
       stop: vi.fn(async () => undefined)
     };
+    const videoHandle = {
+      saveAs: vi.fn(async () => undefined),
+      delete: vi.fn(async () => undefined),
+      path: vi.fn(async () => "/tmp/auto-generated.webm")
+    };
     const page = {
       setDefaultTimeout: vi.fn(),
       setDefaultNavigationTimeout: vi.fn(),
@@ -17,7 +22,8 @@ vi.mock("playwright", () => {
       route: vi.fn(async () => undefined),
       unroute: vi.fn(async () => undefined),
       waitForEvent: vi.fn(async () => undefined),
-      screenshot: vi.fn(async () => undefined)
+      screenshot: vi.fn(async () => undefined),
+      video: vi.fn(() => videoHandle)
     };
     const context = {
       newPage: vi.fn(async () => page),
@@ -28,7 +34,7 @@ vi.mock("playwright", () => {
       newContext: vi.fn(async () => context),
       close: vi.fn(async () => undefined)
     };
-    return { browser, context, page, tracing };
+    return { browser, context, page, tracing, videoHandle };
   }
 
   const chromiumMock = createMockBrowser();
@@ -43,7 +49,7 @@ vi.mock("playwright", () => {
 });
 
 import { chromium, firefox, webkit } from "playwright";
-import { launchBrowser, closeBrowser, createPlaywrightDriver, type BrowserOptions } from "../src/browser/controller.js";
+import { launchBrowser, closeBrowser, finalizeVideo, createPlaywrightDriver, type BrowserOptions } from "../src/browser/controller.js";
 
 function makeOptions(overrides?: Partial<BrowserOptions>): BrowserOptions {
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-ctrl-"));
@@ -53,6 +59,7 @@ function makeOptions(overrides?: Partial<BrowserOptions>): BrowserOptions {
     timeout: 30000,
     trace: false,
     recordHar: false,
+    recordVideo: false,
     runDir,
     ...overrides
   };
@@ -233,6 +240,35 @@ describe("launchBrowser", () => {
     }
   });
 
+  it("configures video recording when enabled (PROWL-027)", async () => {
+    const opts = makeOptions({ recordVideo: true });
+    try {
+      const session = await launchBrowser(opts);
+      const browser = await (chromium.launch as ReturnType<typeof vi.fn>).mock.results[0].value;
+      expect(browser.newContext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recordVideo: { dir: opts.runDir }
+        })
+      );
+      expect(session.video).toBeDefined();
+    } finally {
+      fs.rmSync(opts.runDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not configure video recording by default", async () => {
+    const opts = makeOptions({ recordVideo: false });
+    try {
+      const session = await launchBrowser(opts);
+      const browser = await (chromium.launch as ReturnType<typeof vi.fn>).mock.results[0].value;
+      const callArgs = browser.newContext.mock.calls[0][0] ?? {};
+      expect(callArgs.recordVideo).toBeUndefined();
+      expect(session.video).toBeUndefined();
+    } finally {
+      fs.rmSync(opts.runDir, { recursive: true, force: true });
+    }
+  });
+
   it("passes viewport to context", async () => {
     const opts = makeOptions({ viewport: { width: 1920, height: 1080 } });
     try {
@@ -311,6 +347,56 @@ describe("closeBrowser", () => {
       expect(session.browser.close).toHaveBeenCalled();
       session.context.tracing.stop = originalStop;
     } finally {
+      fs.rmSync(opts.runDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("finalizeVideo (PROWL-027)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("saves the video to video.webm and returns the file name", async () => {
+    const opts = makeOptions({ recordVideo: true });
+    try {
+      const session = await launchBrowser(opts);
+      await closeBrowser(session);
+      const name = await finalizeVideo(session, opts.runDir);
+      expect(name).toBe("video.webm");
+      expect(session.video?.saveAs).toHaveBeenCalledWith(path.join(opts.runDir, "video.webm"));
+      expect(session.video?.delete).toHaveBeenCalled();
+    } finally {
+      fs.rmSync(opts.runDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns undefined when no video was recorded", async () => {
+    const opts = makeOptions({ recordVideo: false });
+    try {
+      const session = await launchBrowser(opts);
+      await closeBrowser(session);
+      const name = await finalizeVideo(session, opts.runDir);
+      expect(name).toBeUndefined();
+    } finally {
+      fs.rmSync(opts.runDir, { recursive: true, force: true });
+    }
+  });
+
+  it("warns and returns undefined when saving fails", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const opts = makeOptions({ recordVideo: true });
+    try {
+      const session = await launchBrowser(opts);
+      await closeBrowser(session);
+      (session.video?.saveAs as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new Error("disk full")
+      );
+      const name = await finalizeVideo(session, opts.runDir);
+      expect(name).toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("disk full"));
+    } finally {
+      warnSpy.mockRestore();
       fs.rmSync(opts.runDir, { recursive: true, force: true });
     }
   });

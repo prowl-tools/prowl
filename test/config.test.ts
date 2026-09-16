@@ -42,6 +42,38 @@ describe("loadConfig", () => {
   });
 });
 
+describe("loadConfig artifacts.video (PROWL-027)", () => {
+  it("defaults artifacts.video to false when not set", () => {
+    const project = setupTempProject();
+    const cwd = process.cwd();
+    try {
+      process.chdir(project);
+      const { config } = loadConfig();
+      expect(config.artifacts.video).toBe(false);
+    } finally {
+      process.chdir(cwd);
+      fs.rmSync(project, { recursive: true, force: true });
+    }
+  });
+
+  it("reads artifacts.video: true from config", () => {
+    const project = setupTempProject();
+    fs.writeFileSync(
+      path.join(project, ".prowl", "config.yml"),
+      "target:\n  url: 'http://example.com'\nartifacts:\n  video: true\n"
+    );
+    const cwd = process.cwd();
+    try {
+      process.chdir(project);
+      const { config } = loadConfig();
+      expect(config.artifacts.video).toBe(true);
+    } finally {
+      process.chdir(cwd);
+      fs.rmSync(project, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("loadHunt", () => {
   it("loads a hunt file", () => {
     const project = setupTempProject();

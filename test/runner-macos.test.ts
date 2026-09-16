@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { runHunt } from "../src/runner/index.js";
 import type { MacHelperClient } from "../src/browser/mac-driver.js";
 
@@ -100,6 +100,35 @@ describe("runHunt — macOS target (PROWL-048)", () => {
       expect(shot?.params).not.toHaveProperty("fullPage");
       expect(result.steps.some((s) => s.type === "assertScreenshot" && s.status === "pass")).toBe(true);
     } finally {
+      process.chdir(cwd);
+      fs.rmSync(project, { recursive: true, force: true });
+    }
+  });
+
+  it("warns that video is web-only and continues on a macOS target (PROWL-027)", async () => {
+    const project = setupProject(
+      MAC_CONFIG,
+      "portable",
+      "steps:\n  - click: { selector: 'id=save' }\n"
+    );
+    const client = new FakeClient(macResponder);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const cwd = process.cwd();
+    try {
+      process.chdir(project);
+      const { result } = await runHunt({
+        huntName: "portable",
+        video: true,
+        macClientFactory: () => client
+      });
+
+      // Degrades to a no-op with a warning — never a hard failure.
+      expect(result.status).toBe("pass");
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Video recording is not supported on macos targets")
+      );
+    } finally {
+      warnSpy.mockRestore();
       process.chdir(cwd);
       fs.rmSync(project, { recursive: true, force: true });
     }
