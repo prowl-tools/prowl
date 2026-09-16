@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { buildInitCommand, scaffoldProwlDir, PRESETS, isPresetName } from "../src/cli/commands/init.js";
-import { CONFIG_DIR, loadHunt } from "../src/config/loader.js";
+import { CONFIG_DIR, loadConfig, loadHunt } from "../src/config/loader.js";
 
 describe("prowl init", () => {
   let tempDir: string;
@@ -522,6 +522,22 @@ describe("prowl init --preset", () => {
       await runInit(["--preset", preset]);
       expect(exists("config.yml")).toBe(true);
       expect(exists(".gitignore")).toBe(true);
+    }
+  });
+
+  it("every preset config and hunt passes schema validation", async () => {
+    for (const preset of PRESETS) {
+      fs.rmSync(path.join(tempDir, ".prowl"), { recursive: true, force: true });
+      await runInit(["--preset", preset]);
+
+      const { configDir } = loadConfig(prowlPath("config.yml"));
+      const huntFiles = fs.readdirSync(prowlPath("hunts")).filter((f) => f.endsWith(".yml"));
+      expect(huntFiles.length).toBeGreaterThan(0);
+      for (const huntFile of huntFiles) {
+        const hunt = loadHunt(huntFile.replace(/\.yml$/, ""), configDir);
+        expect(hunt.name).toBeTruthy();
+        expect(hunt.steps.length).toBeGreaterThan(0);
+      }
     }
   });
 
