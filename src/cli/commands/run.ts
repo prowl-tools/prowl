@@ -70,7 +70,9 @@ export function buildRunCommand(): Command {
           browser: options.browser,
           channel: options.channel,
           viewport: options.viewport,
-          junit: Boolean(options.junit),
+          // Pass through undefined when --junit is absent so config-level
+          // `artifacts.junit` is honored (flag overrides config).
+          junit: options.junit ? true : undefined,
           // Pass through undefined when --video is absent so config-level
           // `artifacts.video` is honored (flag overrides config).
           video: options.video ? true : undefined,

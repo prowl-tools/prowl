@@ -17,6 +17,14 @@ All notable changes to Prowl will be documented in this file.
   warning and continues without it rather than failing. With `retry`, each attempt
   records its own video into its own run directory.
 
+### Fixed
+- **Config-level `artifacts.junit: true` is honored again.** `prowl run` and
+  `prowl ci` coerced the absent `--junit` flag to `false`, which always overrode
+  the config value — so the documented `artifacts.junit` config option never took
+  effect. Both commands now leave the option unset when the flag is absent, so
+  config-level JUnit reporting works and `--junit` still forces it on for a single
+  invocation (flag overrides config, matching the new `artifacts.video` behavior).
+
 ## [0.1.10] - 2026-09-15
 
 ### Added
