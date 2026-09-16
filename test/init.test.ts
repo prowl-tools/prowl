@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
-import { buildInitCommand, scaffoldProwlDir } from "../src/cli/commands/init.js";
+import { buildInitCommand, scaffoldProwlDir, PRESETS, isPresetName } from "../src/cli/commands/init.js";
 import { CONFIG_DIR, loadHunt } from "../src/config/loader.js";
 
 describe("prowl init", () => {
@@ -23,6 +23,11 @@ describe("prowl init", () => {
   function runInit(args: string[] = []) {
     const cmd = buildInitCommand();
     cmd.parse(["node", "prowl", ...args]);
+  }
+
+  async function runInitAsync(args: string[] = []) {
+    const cmd = buildInitCommand();
+    await cmd.parseAsync(["node", "prowl", ...args]);
   }
 
   function failDestinationHuntCopies(prowlDir: string) {
@@ -426,6 +431,173 @@ describe("prowl init", () => {
       process.exitCode = originalExitCode;
       errorSpy.mockRestore();
       copySpy.mockRestore();
+    }
+  });
+});
+
+describe("prowl init --preset", () => {
+  let tempDir: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-init-preset-"));
+    originalCwd = process.cwd();
+    process.chdir(tempDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  async function runInit(args: string[] = []) {
+    const cmd = buildInitCommand();
+    await cmd.parseAsync(["node", "prowl", ...args]);
+  }
+
+  function prowlPath(...parts: string[]): string {
+    return path.join(tempDir, ".prowl", ...parts);
+  }
+
+  function exists(...parts: string[]): boolean {
+    return fs.existsSync(prowlPath(...parts));
+  }
+
+  it("PRESETS lists the four persona presets", () => {
+    expect([...PRESETS]).toEqual(["solo", "team", "ci", "agent"]);
+    expect(isPresetName("solo")).toBe(true);
+    expect(isPresetName("bogus")).toBe(false);
+  });
+
+  it("solo scaffolds a minimal starter set (hello + first-flow only)", async () => {
+    await runInit(["--preset", "solo"]);
+
+    expect(exists("config.yml")).toBe(true);
+    expect(exists(".gitignore")).toBe(true);
+    expect(exists("hunts", "hello.yml")).toBe(true);
+    expect(exists("hunts", "first-flow.yml")).toBe(true);
+    // solo omits the fuller/default starters
+    expect(exists("hunts", "login-flow.yml")).toBe(false);
+    expect(exists("hunts", "macos-hello.yml")).toBe(false);
+  });
+
+  it("team scaffolds auth, CRUD, and form hunts with guardrails in config", async () => {
+    await runInit(["--preset", "team"]);
+
+    expect(exists("hunts", "login-flow.yml")).toBe(true);
+    expect(exists("hunts", "crud.yml")).toBe(true);
+    expect(exists("hunts", "form.yml")).toBe(true);
+
+    const config = fs.readFileSync(prowlPath("config.yml"), "utf-8");
+    expect(config).toContain("forbiddenSelectors");
+    expect(config).toContain("allowedDomains");
+    expect(config).toContain("maxSteps");
+  });
+
+  it("ci enables JUnit and ships a GitHub Actions workflow template", async () => {
+    await runInit(["--preset", "ci"]);
+
+    const config = fs.readFileSync(prowlPath("config.yml"), "utf-8");
+    expect(config).toContain("junit: true");
+
+    expect(exists("github-workflow.example.yml")).toBe(true);
+    const workflow = fs.readFileSync(prowlPath("github-workflow.example.yml"), "utf-8");
+    expect(workflow).toContain("prowl ci --junit");
+
+    // The workflow must NOT be written outside .prowl/ — scaffold safety.
+    expect(fs.existsSync(path.join(tempDir, ".github"))).toBe(false);
+  });
+
+  it("agent ships an AGENTS.md surface guide and an .env.example", async () => {
+    await runInit(["--preset", "agent"]);
+
+    expect(exists("hunts", "assertions.yml")).toBe(true);
+    expect(exists(".env.example")).toBe(true);
+    expect(exists("AGENTS.md")).toBe(true);
+
+    const agents = fs.readFileSync(prowlPath("AGENTS.md"), "utf-8");
+    expect(agents).toContain("prowl run");
+    expect(agents).toContain("--json");
+    expect(agents).toContain("prowl mcp");
+  });
+
+  it("all presets produce a .gitignore and a config.yml", async () => {
+    for (const preset of PRESETS) {
+      fs.rmSync(path.join(tempDir, ".prowl"), { recursive: true, force: true });
+      await runInit(["--preset", preset]);
+      expect(exists("config.yml")).toBe(true);
+      expect(exists(".gitignore")).toBe(true);
+    }
+  });
+
+  it("rejects an unknown preset with exit code 1", async () => {
+    const originalExitCode = process.exitCode;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      process.exitCode = undefined;
+      await runInit(["--preset", "enterprise"]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Unknown preset "enterprise"'));
+      expect(fs.existsSync(path.join(tempDir, ".prowl"))).toBe(false);
+    } finally {
+      process.exitCode = originalExitCode;
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("non-TTY with no --preset falls back to the standard scaffold", async () => {
+    // stdin/stdout are not TTYs under the test runner, so no prompt fires.
+    await runInit();
+
+    // Standard scaffold ships the default four hunts (including macOS starter).
+    expect(exists("hunts", "hello.yml")).toBe(true);
+    expect(exists("hunts", "login-flow.yml")).toBe(true);
+    expect(exists("hunts", "form.yml")).toBe(true);
+    expect(exists("hunts", "macos-hello.yml")).toBe(true);
+    // Preset-only extras must not appear in the standard scaffold.
+    expect(exists("github-workflow.example.yml")).toBe(false);
+    expect(exists("AGENTS.md")).toBe(false);
+  });
+
+  it("scaffoldProwlDir() with no preset matches the standard scaffold (doctor --fix path)", () => {
+    scaffoldProwlDir(tempDir);
+
+    // doctor --fix calls scaffoldProwlDir(cwd) with no preset — unchanged set.
+    expect(exists("hunts", "hello.yml")).toBe(true);
+    expect(exists("hunts", "macos-hello.yml")).toBe(true);
+    expect(exists("github-workflow.example.yml")).toBe(false);
+  });
+
+  it("rolls back a partial preset scaffold when destination copying fails", () => {
+    const prowlDir = path.join(tempDir, ".prowl");
+    const copyFileSync = fs.copyFileSync;
+    const copySpy = vi.spyOn(fs, "copyFileSync").mockImplementation((source, destination, mode) => {
+      if (String(destination).startsWith(path.join(prowlDir, "hunts") + path.sep)) {
+        throw new Error("destination copy failed");
+      }
+      copyFileSync(source, destination, mode);
+    });
+
+    try {
+      expect(() => scaffoldProwlDir(tempDir, "ci")).toThrow("destination copy failed");
+      expect(fs.existsSync(prowlDir)).toBe(false);
+    } finally {
+      copySpy.mockRestore();
+    }
+  });
+
+  it("prints preset-specific post-init hints (ci points at the workflow)", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      await runInit(["--preset", "ci"]);
+      const output = logSpy.mock.calls.flat().join("\n");
+      expect(output).toContain("github-workflow.example.yml");
+      expect(output).toContain(".github/workflows/prowl.yml");
+    } finally {
+      logSpy.mockRestore();
     }
   });
 });
