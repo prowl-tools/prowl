@@ -19,7 +19,8 @@ import {
   webkit,
   type Browser,
   type BrowserContext,
-  type Page
+  type Page,
+  type Video
 } from "playwright";
 import type { BrowserChannel, BrowserEngine, Viewport } from "../types/index.js";
 import type {
@@ -39,6 +40,12 @@ export type BrowserSession = {
   context: BrowserContext;
   page: Page;
   tracePath?: string;
+  /**
+   * The page's video handle when `recordVideo` was enabled (PROWL-027). Playwright
+   * only finalizes the file once the context closes, so the path is resolved later
+   * via {@link finalizeVideo} rather than here.
+   */
+  video?: Video;
 };
 
 export type BrowserOptions = {
@@ -48,6 +55,8 @@ export type BrowserOptions = {
   storageStatePath?: string;
   trace: boolean;
   recordHar: boolean;
+  /** Record a WebM video of the run into {@link BrowserOptions.runDir} (PROWL-027). */
+  recordVideo: boolean;
   runDir: string;
   engine?: BrowserEngine;
   channel?: BrowserChannel;
@@ -89,6 +98,12 @@ export async function launchBrowser(options: BrowserOptions): Promise<BrowserSes
       contextOptions.recordHar = { path: path.join(options.runDir, "network.har") };
     }
 
+    // recordVideo is a browser-context option (not a page option): Playwright writes
+    // one WebM per page into `dir`, finalized only when the context closes.
+    if (options.recordVideo) {
+      contextOptions.recordVideo = { dir: options.runDir };
+    }
+
     const context = await browser.newContext(contextOptions);
     const page = await context.newPage();
     page.setDefaultTimeout(options.timeout);
@@ -100,7 +115,9 @@ export async function launchBrowser(options: BrowserOptions): Promise<BrowserSes
       await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
     }
 
-    return { browser, context, page, tracePath };
+    const video = options.recordVideo ? page.video() ?? undefined : undefined;
+
+    return { browser, context, page, tracePath, video };
   } catch (error) {
     try {
       await browser.close();
@@ -120,6 +137,40 @@ export async function closeBrowser(session: BrowserSession): Promise<void> {
   } finally {
     await session.browser.close();
   }
+}
+
+/**
+ * Save the run's recorded video to a stable `video.webm` in `runDir` (PROWL-027) and
+ * return its file name, or `undefined` when no video was recorded or saving failed.
+ *
+ * MUST be called AFTER {@link closeBrowser}: Playwright only finalizes the WebM once the
+ * context has closed, so calling earlier yields a zero-length or missing file. Uses
+ * `saveAs` (which waits for the file to be fully written) then deletes the auto-named
+ * temp file so the run directory keeps a single, predictably-named video.
+ */
+export async function finalizeVideo(
+  session: BrowserSession,
+  runDir: string
+): Promise<string | undefined> {
+  if (!session.video) {
+    return undefined;
+  }
+  const fileName = "video.webm";
+  let saved = false;
+  try {
+    await session.video.saveAs(path.join(runDir, fileName));
+    saved = true;
+  } catch (error) {
+    console.warn(`Failed to save run video: ${formatError(error)}`);
+  }
+
+  try {
+    await session.video.delete();
+  } catch (error) {
+    console.warn(`Failed to delete temporary run video: ${formatError(error)}`);
+  }
+
+  return saved ? fileName : undefined;
 }
 
 /** Persist the session's storage state (cookies + localStorage) to disk. */

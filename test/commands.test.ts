@@ -204,6 +204,75 @@ describe("run command", () => {
     );
   });
 
+  it("leaves junit undefined when --junit is absent so config is honored", async () => {
+    mockRunHunt.mockResolvedValue({
+      result: {
+        status: "pass",
+        exitCode: 0,
+        hunt: "homepage",
+        steps: [],
+        assertions: [],
+        artifacts: {}
+      },
+      runDir: "/tmp/prowl/runs/test"
+    });
+
+    const cmd = buildRunCommand();
+    await cmd.parseAsync(["node", "prowl", "homepage"]);
+
+    expect(mockRunHunt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        junit: undefined
+      })
+    );
+  });
+
+  it("passes --video flag to runHunt (PROWL-027)", async () => {
+    mockRunHunt.mockResolvedValue({
+      result: {
+        status: "pass",
+        exitCode: 0,
+        hunt: "homepage",
+        steps: [],
+        assertions: [],
+        artifacts: {}
+      },
+      runDir: "/tmp/prowl/runs/test"
+    });
+
+    const cmd = buildRunCommand();
+    await cmd.parseAsync(["node", "prowl", "homepage", "--video"]);
+
+    expect(mockRunHunt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        video: true
+      })
+    );
+  });
+
+  it("leaves video undefined when --video is absent so config is honored (PROWL-027)", async () => {
+    mockRunHunt.mockResolvedValue({
+      result: {
+        status: "pass",
+        exitCode: 0,
+        hunt: "homepage",
+        steps: [],
+        assertions: [],
+        artifacts: {}
+      },
+      runDir: "/tmp/prowl/runs/test"
+    });
+
+    const cmd = buildRunCommand();
+    await cmd.parseAsync(["node", "prowl", "homepage"]);
+
+    expect(mockRunHunt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        video: undefined
+      })
+    );
+  });
+
   it("sets process.exitCode on failure", async () => {
     mockRunHunt.mockResolvedValue({
       result: {

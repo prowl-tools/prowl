@@ -118,6 +118,21 @@ describe("writeSummary content", () => {
     }
   });
 
+  it("includes the video artifact path when present (PROWL-027)", () => {
+    const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-summary-"));
+    try {
+      const result = makeResult({
+        artifacts: { summary: "summary.md", video: "video.webm", screenshots: [] }
+      });
+      writeSummary(runDir, result);
+      const content = fs.readFileSync(path.join(runDir, "summary.md"), "utf-8");
+
+      expect(content).toContain("- video: video.webm");
+    } finally {
+      fs.rmSync(runDir, { recursive: true, force: true });
+    }
+  });
+
   it("handles empty steps and assertions", () => {
     const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-summary-"));
     try {

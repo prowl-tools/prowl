@@ -81,7 +81,9 @@ export const configSchema = z
         screenshots: z.enum(["on-failure", "all"]).optional(),
         networkHar: z.boolean().optional(),
         console: z.boolean().optional(),
-        junit: z.boolean().optional()
+        junit: z.boolean().optional(),
+        // WebM recording of the whole run (PROWL-027), web target only. Default off.
+        video: z.boolean().optional()
       })
       .optional(),
     assertions: z

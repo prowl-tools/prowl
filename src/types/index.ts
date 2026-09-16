@@ -81,6 +81,12 @@ export type Config = {
     networkHar: boolean;
     console: boolean;
     junit: boolean;
+    /**
+     * Record a WebM video of the whole run (PROWL-027, default off). Web target
+     * only — Playwright's `recordVideo` has no native (macOS/iOS/Android) analog,
+     * where the setting is a documented no-op with a warning.
+     */
+    video: boolean;
   };
   assertions: {
     noConsoleErrors: boolean;
@@ -302,6 +308,8 @@ export type RunArtifacts = {
   trace?: string;
   networkHar?: string;
   junit?: string;
+  /** Relative path to the recorded run video (WebM), present only when video recording was enabled and succeeded (PROWL-027). */
+  video?: string;
 };
 
 export type TraceCorrelation = {

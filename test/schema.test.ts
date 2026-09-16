@@ -824,4 +824,21 @@ describe("configSchema artifacts options", () => {
     });
     expect(parsed.artifacts?.junit).toBe(false);
   });
+
+  it("accepts artifacts.video boolean", () => {
+    const parsed = configSchema.parse({
+      target: { url: "http://localhost" },
+      artifacts: { video: true }
+    });
+    expect(parsed.artifacts?.video).toBe(true);
+  });
+
+  it("rejects a non-boolean artifacts.video", () => {
+    expect(() =>
+      configSchema.parse({
+        target: { url: "http://localhost" },
+        artifacts: { video: "yes" }
+      })
+    ).toThrow();
+  });
 });

@@ -48,21 +48,6 @@ agreement, create the Developer ID Application cert, create the App Store Connec
 
 ## Medium Priority
 
-{PROWL-027} **P6-005: Video Recording**
-   Record full hunt execution as MP4 video.
-
-**Status (2026-09-15)**: briefly retired, then revived the same day (owner decision) as a
-config-toggleable option. Scope note: Playwright's `recordVideo` is **web-target only** — the
-native targets (macOS/iOS/Android) have no video capture; the feature must degrade there
-honestly (documented no-op or warning, never a hard failure).
-
-**Acceptance Criteria**:
-- Config option: `artifacts.video: true` (default: false)
-- CLI flag: `prowl run homepage --video`
-- Playwright: `browser.newContext({ recordVideo: { dir: ... } })`, then `context.newPage()` for pages; `recordVideo` is a browser context option, not a page option
-- Video saved to run directory alongside screenshots
-- Useful for sharing failures with non-technical stakeholders
-
 {PROWL-029} **P6-009: Persona-Specific Onboarding Paths**
    `prowl init` currently gives everyone the same 8 example hunts. Different users need different starting points. A solo developer testing a side project, a QA team adding regression tests, and an AI agent builder integrating Prowl all have different first-run needs.
 

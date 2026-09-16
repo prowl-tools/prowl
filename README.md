@@ -808,6 +808,7 @@ artifacts:
   screenshots: "on-failure"           # "on-failure" or "all"
   networkHar: false                    # save network activity as HAR
   console: true                        # save browser console output
+  video: false                         # record the run as video.webm (web target only)
 
 # Hunt-level assertions (applied to every hunt)
 assertions:
@@ -997,10 +998,30 @@ Every hunt run generates artifacts in `.prowl/runs/<timestamp>/`:
 │   ├── final.png        # Final page state
 │   └── failure_step_3.png  # Screenshot on failure (if any)
 ├── trace.zip            # Playwright trace (if --trace)
-└── network.har          # Network activity (if networkHar: true)
+├── network.har          # Network activity (if networkHar: true)
+└── video.webm           # Screen recording of the run (if video: true / --video)
 ```
 
 <!-- ILLUSTRATION: Screenshot of a run directory in Finder/terminal showing the artifact files -->
+
+### Recording a Video
+
+Record the whole run as a video to share a failure with someone who won't read a
+trace — a designer, a PM, a support colleague. Turn it on per project with
+`artifacts.video: true`, or per run with the flag:
+
+```bash
+prowl run homepage --video
+```
+
+The recording is saved as `video.webm` in the run directory (Playwright records
+WebM natively — Prowl ships it as-is, with no transcode step or extra dependency)
+and is listed under `artifacts.video` in `result.json` and `summary.md`. The
+`--video` flag overrides the config setting; both default off.
+
+Video is a **web-target feature only** — Playwright's screen recording has no
+native equivalent. On a macOS, iOS, or Android target Prowl prints a warning and
+runs without video rather than failing.
 
 ### Viewing Traces
 
@@ -1079,6 +1100,7 @@ prowl run <hunt-name>
 prowl run .prowl/hunts/homepage.yml     # A literal path resolves to `homepage`
 prowl run <hunt-name> --headed          # Show browser window
 prowl run <hunt-name> --trace           # Capture Playwright trace
+prowl run <hunt-name> --video           # Record the run as video.webm (web target only)
 prowl run <hunt-name> --slow-mo 500     # Slow down actions (ms)
 prowl run <hunt-name> --url <override>  # Override target URL
 prowl run <hunt-name> --config <path>   # Custom config path

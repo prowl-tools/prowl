@@ -4,6 +4,7 @@ import type { RunResult, StepResult, AssertionResult } from "../src/types/index.
 
 const mockLaunchBrowser = vi.fn();
 const mockCloseBrowser = vi.fn();
+const mockFinalizeVideo = vi.fn();
 const mockCreatePlaywrightDriver = vi.fn();
 const mockExecuteSteps = vi.fn();
 const mockCaptureFinalScreenshot = vi.fn();
@@ -19,6 +20,7 @@ const mockAppendHistoryEntry = vi.fn();
 vi.mock("../src/browser/controller.js", () => ({
   launchBrowser: (...args: unknown[]) => mockLaunchBrowser(...args),
   closeBrowser: (...args: unknown[]) => mockCloseBrowser(...args),
+  finalizeVideo: (...args: unknown[]) => mockFinalizeVideo(...args),
   createPlaywrightDriver: (...args: unknown[]) => mockCreatePlaywrightDriver(...args)
 }));
 
@@ -59,7 +61,7 @@ function defaultConfig() {
   return {
     target: { url: "http://localhost:3000" },
     browser: { headless: true, slowMo: 0, timeout: 30000, engine: "chromium", viewport: { width: 1280, height: 720 } },
-    artifacts: { screenshots: "on-failure", networkHar: false, console: true, junit: false },
+    artifacts: { screenshots: "on-failure", networkHar: false, console: true, junit: false, video: false },
     assertions: { noConsoleErrors: true, noNetworkErrors: true, maxTotalTimeMs: 30000, networkIgnorePatterns: [] },
     guardrails: { maxSteps: 50, allowedDomains: ["localhost"], forbiddenSelectors: [] },
     auth: { storageStatePath: ".prowl/auth-state.json" },
@@ -119,6 +121,7 @@ function setupMocks(overrides?: {
   const driver = mockDriver();
   mockLaunchBrowser.mockResolvedValue(session);
   mockCloseBrowser.mockResolvedValue(undefined);
+  mockFinalizeVideo.mockResolvedValue(undefined);
   mockCreatePlaywrightDriver.mockReturnValue(driver);
 
   const stepResults = overrides?.stepResults ?? [
@@ -254,6 +257,44 @@ describe("runHunt", () => {
     expect(mockLaunchBrowser).toHaveBeenCalledWith(
       expect.objectContaining({ engine: "firefox" })
     );
+  });
+
+  it("records a video artifact when the --video flag is set (PROWL-027)", async () => {
+    setupMocks();
+    mockFinalizeVideo.mockResolvedValue("video.webm");
+
+    const { result } = await runHunt({ huntName: "test-hunt", video: true });
+
+    expect(mockLaunchBrowser).toHaveBeenCalledWith(
+      expect.objectContaining({ recordVideo: true })
+    );
+    expect(mockFinalizeVideo).toHaveBeenCalled();
+    expect(result.artifacts.video).toBe("video.webm");
+  });
+
+  it("enables video from config artifacts.video when no flag is set", async () => {
+    const { config } = setupMocks();
+    config.artifacts.video = true;
+    mockFinalizeVideo.mockResolvedValue("video.webm");
+
+    const { result } = await runHunt({ huntName: "test-hunt" });
+
+    expect(mockLaunchBrowser).toHaveBeenCalledWith(
+      expect.objectContaining({ recordVideo: true })
+    );
+    expect(result.artifacts.video).toBe("video.webm");
+  });
+
+  it("does not record video by default", async () => {
+    setupMocks();
+
+    const { result } = await runHunt({ huntName: "test-hunt" });
+
+    expect(mockLaunchBrowser).toHaveBeenCalledWith(
+      expect.objectContaining({ recordVideo: false })
+    );
+    expect(mockFinalizeVideo).not.toHaveBeenCalled();
+    expect(result.artifacts.video).toBeUndefined();
   });
 
   it("passes viewport option to resolveViewport", async () => {

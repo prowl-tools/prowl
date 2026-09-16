@@ -88,6 +88,7 @@ async function runWebAnalyze(url: string, options: Record<string, unknown>): Pro
     timeout: 30000,
     trace: false,
     recordHar: false,
+    recordVideo: false,
     runDir: process.cwd(),
     engine,
     channel,
