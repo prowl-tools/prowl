@@ -1,0 +1,51 @@
+# CRUD Flow — Create, Read, Update, Delete
+# ---
+# Pattern: Resource lifecycle — create an item, confirm it appears, edit it,
+# then verify the change. A common regression target for dashboards and admin
+# tools.
+# What it tests: A record survives a create → edit round-trip.
+# Customize:
+#   - Point `navigate` at your resource list (e.g. /projects, /items)
+#   - Update the field labels, button text, and assertions to match your app
+#
+# This hunt assumes you are already authenticated. Run `prowl login` first, or
+# rely on the auth state captured by the login-flow hunt.
+#
+# Note: deletion is intentionally left out — .prowl/config.yml forbids
+# ".delete-btn" and "[data-danger]" by default so a hunt can't wipe real data.
+# Point those guardrails at your own destructive controls before adding a
+# delete step.
+
+name: crud
+description: Create a record, verify it, edit it, and confirm the update
+
+tags:
+  - crud
+  - regression
+
+steps:
+  - navigate: "/items"
+
+  # Create
+  - click: "New item"
+  - fill:
+      "Title": "Prowl regression item"
+  - click: "Save"
+
+  # Read — the new record should appear in the list
+  - assert:
+      visible: "Prowl regression item"
+
+  # Update
+  - click: "Prowl regression item"
+  - fill:
+      "Title": "Prowl regression item (edited)"
+  - click: "Save"
+
+  # Confirm the update took
+  - assert:
+      visible: "Prowl regression item (edited)"
+
+assertions:
+  - noConsoleErrors: true
+  - noNetworkErrors: true

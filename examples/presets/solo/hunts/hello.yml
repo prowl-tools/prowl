@@ -1,0 +1,18 @@
+# Hello Hunt — Your First Prowl Test
+# ---
+# This minimal hunt verifies your target app is running and the page loads.
+# Customize the URL path and expected text to match your app.
+#
+# Run it:  prowl run hello
+
+name: hello
+description: Verify the target app loads successfully
+
+steps:
+  - navigate: "/"
+
+  - waitForNetworkIdle:
+      timeout: 5000
+
+assertions:
+  - noConsoleErrors: true

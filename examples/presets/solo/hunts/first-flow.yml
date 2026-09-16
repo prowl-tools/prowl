@@ -1,0 +1,27 @@
+# First Flow — A Simple Click-Through
+# ---
+# A tiny end-to-end flow: land on the homepage, follow a link, and confirm the
+# next page rendered. This is the shape most of your hunts will take — a few
+# actions followed by an assertion.
+#
+# Customize:
+#   - Point `navigate` at a real path in your app
+#   - Change the click target text and the visible assertion to match
+#
+# Run it:  prowl run first-flow
+
+name: first-flow
+description: Navigate the homepage, follow a link, and verify the next page
+
+steps:
+  - navigate: "/"
+
+  # Shorthand click — Prowl finds a link or button by its visible text.
+  - click: "Get Started"
+
+  # Confirm the destination rendered. Prefer stable, visible text here.
+  - assert:
+      visible: "Welcome"
+
+assertions:
+  - noConsoleErrors: true

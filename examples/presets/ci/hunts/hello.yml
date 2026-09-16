@@ -1,0 +1,22 @@
+# Hello Hunt — Smoke Test
+# ---
+# A minimal, fast-running smoke test that verifies the app is up. Good as the
+# first gate in a CI pipeline: if this fails, the deploy is broken.
+#
+# Run it:  prowl run hello
+
+name: hello
+description: Verify the target app loads successfully
+
+tags:
+  - smoke
+  - ci
+
+steps:
+  - navigate: "/"
+
+  - waitForNetworkIdle:
+      timeout: 5000
+
+assertions:
+  - noConsoleErrors: true

@@ -1,0 +1,32 @@
+# Critical Path — Core User Journey
+# ---
+# The one flow that must never break. Keep this deterministic and independent of
+# test data that other hunts create, so it can run in any order and in parallel
+# (`prowl ci --parallel <n>`).
+# Customize:
+#   - Replace the steps with your product's most important journey
+#   - Tag it so `prowl ci --include-tags critical` can gate merges on it alone
+#
+# Run it:  prowl run critical-path
+
+name: critical-path
+description: Exercise the core user journey end to end
+
+tags:
+  - critical
+  - ci
+
+steps:
+  - navigate: "/"
+
+  - click: "Get Started"
+
+  - waitForNetworkIdle:
+      timeout: 5000
+
+  - assert:
+      visible: "Welcome"
+
+assertions:
+  - noConsoleErrors: true
+  - noNetworkErrors: true

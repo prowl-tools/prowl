@@ -1,0 +1,22 @@
+# Hello Hunt — Smoke Test
+# ---
+# A minimal hunt an agent can run first to confirm the target is reachable.
+# `prowl run hello --json` returns a structured result; exit code 0 means pass.
+#
+# Run it:  prowl run hello --json
+
+name: hello
+description: Verify the target app loads successfully
+
+tags:
+  - smoke
+  - agent
+
+steps:
+  - navigate: "/"
+
+  - waitForNetworkIdle:
+      timeout: 5000
+
+assertions:
+  - noConsoleErrors: true

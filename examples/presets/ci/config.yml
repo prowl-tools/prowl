@@ -1,0 +1,37 @@
+# Prowl Configuration (ci preset)
+# Tuned for continuous integration: machine-readable JUnit reports and
+# failure-only screenshots so pipelines stay fast and artifacts stay small.
+
+# Target application — override per environment with `prowl ci --url <url>`.
+target:
+  url: "http://localhost:3000"
+
+browser:
+  headless: true       # Always headless in CI
+  timeout: 30000
+
+# Artifact generation.
+artifacts:
+  junit: true                # Emit JUnit XML so CI can render test results
+  screenshots: "on-failure"  # Capture a screenshot only when a step fails
+  console: true              # Save browser console output for triage
+
+# Hunt-level assertions — applied after every hunt's steps complete.
+assertions:
+  noConsoleErrors: true
+  noNetworkErrors: true
+  maxTotalTimeMs: 30000
+
+# Safety guardrails.
+guardrails:
+  maxSteps: 50
+  allowedDomains:
+    - "localhost"
+    - "127.0.0.1"
+    - "0.0.0.0"
+  forbiddenSelectors:
+    - "[data-danger]"
+    - ".delete-btn"
+
+auth:
+  storageStatePath: ".prowl/auth-state.json"

@@ -1,0 +1,40 @@
+# Prowl Configuration (agent preset)
+# Tuned for programmatic use by AI agents and scripts. Pair it with the
+# machine-readable surface documented in .prowl/AGENTS.md: `--json` output,
+# stable exit codes, and the `prowl mcp` server.
+
+# Target application — override per invocation with `--url <url>`.
+target:
+  url: "http://localhost:3000"
+
+browser:
+  headless: true       # Agents run without a display
+  timeout: 30000
+
+# Artifact generation. Screenshots on failure give an agent something to
+# inspect when a hunt fails; console output aids automated triage.
+artifacts:
+  screenshots: "on-failure"
+  console: true
+
+# Hunt-level assertions — applied after every hunt's steps complete.
+assertions:
+  noConsoleErrors: true
+  noNetworkErrors: true
+  maxTotalTimeMs: 30000
+
+# Safety guardrails — keep an autonomous agent inside known-safe boundaries.
+guardrails:
+  maxSteps: 50
+  allowedDomains:
+    - "localhost"
+    - "127.0.0.1"
+    - "0.0.0.0"
+  forbiddenSelectors:
+    - "[data-danger]"
+    - ".delete-btn"
+
+# Secrets referenced by hunts live in .prowl/.env — copy .prowl/.env.example
+# to .prowl/.env and fill it in. .env is git-ignored and redacted in reports.
+auth:
+  storageStatePath: ".prowl/auth-state.json"

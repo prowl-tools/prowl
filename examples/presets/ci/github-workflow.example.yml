@@ -1,0 +1,69 @@
+# Prowl E2E — GitHub Actions workflow (example)
+# ---
+# This file ships inside .prowl/ because `prowl init` only writes under .prowl/.
+# To activate it, copy it into your repo's workflow directory:
+#
+#     mkdir -p .github/workflows
+#     cp .prowl/github-workflow.example.yml .github/workflows/prowl.yml
+#
+# Then commit .github/workflows/prowl.yml. Adjust the app-startup step and the
+# target URL to match how your project runs locally.
+
+name: Prowl E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  hunts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Install your app's dependencies and Prowl.
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm install -g prowl-tools
+
+      # Prowl drives Chromium via Playwright — install the browser in CI.
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Start your app in the background and wait for it to be reachable.
+      # Replace this with however your project boots locally. The URL must
+      # match target.url in .prowl/config.yml (override with --url below).
+      - name: Start app
+        run: |
+          npm run start &
+          npx wait-on http://localhost:3000
+
+      # Run every hunt and emit JUnit XML for the test-report step.
+      - name: Run hunts
+        run: prowl ci --junit
+
+      # Surface pass/fail per hunt in the GitHub UI. The JUnit path matches
+      # where `prowl ci --junit` writes its report.
+      - name: Publish test report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Prowl hunts
+          path: ".prowl/runs/**/junit.xml"
+          reporter: java-junit
+
+      # Keep run artifacts (screenshots, console logs) for failed hunts.
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prowl-artifacts
+          path: .prowl/runs/
+          if-no-files-found: ignore
