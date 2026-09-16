@@ -4,6 +4,19 @@ All notable changes to Prowl will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Video recording (PROWL-027).** Opt in to record the whole hunt run as a video
+  for sharing failures with non-technical stakeholders. Enable it per-project with
+  `artifacts.video: true` (default off) or per-run with `prowl run <hunt> --video`
+  — the flag overrides config. The video is saved as `video.webm` in the run
+  directory alongside the screenshots and is listed in `result.json` and
+  `summary.md` (`artifacts.video`) like the other artifacts. Playwright records
+  WebM natively, so Prowl ships the `.webm` as-is with no transcode step or extra
+  dependency. **Web target only:** Playwright's `recordVideo` has no native
+  (macOS/iOS/Android) analog, so requesting video on a native target prints a
+  warning and continues without it rather than failing. With `retry`, each attempt
+  records its own video into its own run directory.
+
 ## [0.1.10] - 2026-09-15
 
 ### Added
