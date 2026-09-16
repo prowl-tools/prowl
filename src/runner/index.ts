@@ -10,7 +10,7 @@ import {
   assertTargetAppAllowed,
   nativeTargetLabel
 } from "../config/target.js";
-import { launchBrowser, closeBrowser, createPlaywrightDriver } from "../browser/controller.js";
+import { launchBrowser, closeBrowser, finalizeVideo, createPlaywrightDriver } from "../browser/controller.js";
 import { launchMacSession, closeMacSession, type MacSession } from "../browser/mac-helper.js";
 import type { MacHelperClient } from "../browser/mac-driver.js";
 import type { SessionDriver } from "../browser/driver.js";
@@ -77,6 +77,11 @@ export type RunOptions = {
   channel?: BrowserChannel;
   viewport?: string;
   junit?: boolean;
+  /**
+   * Record a WebM video of the run (PROWL-027). Web target only; a no-op with a
+   * warning on native targets. Overrides `artifacts.video` when set.
+   */
+  video?: boolean;
   /** Inject a macOS helper client (tests / a prebuilt binary); defaults to spawning the helper. */
   macClientFactory?: () => MacHelperClient;
   /** Inject an Android session factory (tests); defaults to {@link launchAndroidSession}. */
@@ -168,6 +173,11 @@ async function executeHuntAttempt(
     ? resolveViewport(parseViewportFlag(options.viewport))
     : config.browser.viewport;
 
+  // Flag overrides config; both default off. Resolved before the context is created
+  // because recordVideo is a newContext option.
+  const recordVideo = options.video ?? config.artifacts.video;
+  const junit = options.junit ?? config.artifacts.junit;
+
   const session = await launchBrowser({
     headless,
     slowMo,
@@ -175,6 +185,7 @@ async function executeHuntAttempt(
     storageStatePath,
     trace: Boolean(options.trace),
     recordHar: config.artifacts.networkHar,
+    recordVideo,
     runDir,
     engine,
     channel,
@@ -291,9 +302,19 @@ async function executeHuntAttempt(
       traceCorrelations
     });
 
-    result = writeReports(runDir, runResult, { junit: options.junit ?? config.artifacts.junit });
+    result = writeReports(runDir, runResult, { junit });
   } finally {
     await closeBrowser(session);
+  }
+
+  // The WebM is only finalized once the context has closed (above), so save it to a
+  // stable name and re-persist the reports with the artifact path. Skipped entirely
+  // when video was off or nothing was recorded, keeping non-video runs unchanged.
+  if (recordVideo) {
+    const video = await finalizeVideo(session, runDir);
+    if (video) {
+      result = writeReports(runDir, { ...result, artifacts: { ...result.artifacts, video } }, { junit });
+    }
   }
 
   return { result, runDir, steps: interpolatedHunt.steps };
@@ -770,6 +791,14 @@ async function runNativeHunt<TTarget extends NativeRunTarget>(
   // steps and web-only types are reported as skipped (see executeNativeHuntAttempt).
   assertStepsSupportedByTarget(interpolatedHunt.steps, native.targetType);
   native.assertAppAllowed(config.guardrails.allowedApps, target);
+
+  // Video recording is web-only (Playwright's recordVideo has no native analog).
+  // Degrade honestly: warn once and continue rather than failing the run.
+  if (options.video ?? config.artifacts.video) {
+    console.warn(
+      `Video recording is not supported on ${native.targetType} targets (web only); continuing without video.`
+    );
+  }
 
   const maxSteps = config.guardrails.maxSteps;
   if (interpolatedHunt.steps.length > maxSteps) {

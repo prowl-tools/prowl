@@ -8,6 +8,7 @@
 export {
   launchBrowser,
   closeBrowser,
+  finalizeVideo,
   saveStorageState,
   createPlaywrightDriver,
   type BrowserSession,

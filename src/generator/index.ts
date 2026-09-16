@@ -40,6 +40,7 @@ export async function generateHunt(options: GenerateOptions): Promise<string> {
       timeout: 30000,
       trace: false,
       recordHar: false,
+      recordVideo: false,
       runDir: process.cwd(),
       engine,
       viewport

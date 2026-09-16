@@ -51,6 +51,7 @@ export function buildLoginCommand(): Command {
           timeout: config.browser.timeout,
           trace: false,
           recordHar: false,
+          recordVideo: false,
           runDir: configDir
         });
         const driver = createPlaywrightDriver(session.page);

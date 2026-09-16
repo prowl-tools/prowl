@@ -103,6 +103,9 @@ export function writeSummary(runDir: string, result: RunResult): string {
   if (artifacts.junit) {
     lines.push(`- junit: ${artifacts.junit}`);
   }
+  if (artifacts.video) {
+    lines.push(`- video: ${artifacts.video}`);
+  }
   if (artifacts.screenshots && artifacts.screenshots.length > 0) {
     for (const screenshot of artifacts.screenshots) {
       lines.push(`- screenshot: ${screenshot}`);

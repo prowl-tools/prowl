@@ -23,6 +23,7 @@ export function buildRunCommand(): Command {
     .option("--include-tags <tags>", "Only run hunts matching these tags (comma-separated)")
     .option("--exclude-tags <tags>", "Skip hunts matching these tags (comma-separated)")
     .option("--junit", "Generate JUnit XML report")
+    .option("--video", "Record a WebM video of the run (web target only)")
     .option("--config <path>", "Custom config path")
     .option("--json", "Output results as JSON")
     .action(async (huntArg, options) => {
@@ -70,6 +71,9 @@ export function buildRunCommand(): Command {
           channel: options.channel,
           viewport: options.viewport,
           junit: Boolean(options.junit),
+          // Pass through undefined when --video is absent so config-level
+          // `artifacts.video` is honored (flag overrides config).
+          video: options.video ? true : undefined,
           configPath: options.config,
           onStep: options.json
             ? undefined
