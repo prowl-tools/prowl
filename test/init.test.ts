@@ -25,11 +25,6 @@ describe("prowl init", () => {
     cmd.parse(["node", "prowl", ...args]);
   }
 
-  async function runInitAsync(args: string[] = []) {
-    const cmd = buildInitCommand();
-    await cmd.parseAsync(["node", "prowl", ...args]);
-  }
-
   function failDestinationHuntCopies(prowlDir: string) {
     const copyFileSync = fs.copyFileSync;
     return vi.spyOn(fs, "copyFileSync").mockImplementation((source, destination, mode) => {
