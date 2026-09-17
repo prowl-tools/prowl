@@ -15,6 +15,8 @@ const STEP_REFERENCE = `
 ### Interaction
 - click: "Button Text" — click by text (tries role=button first)
 - click: { selector: "[data-testid=btn]" } — click by selector
+- doubleClick: "Text" or { selector: "#el" } — double-click (same shapes as click; web only)
+- rightClick: "Text" or { selector: "#el" } — right-click for context menus (same shapes as click; web only)
 - fill: { "Label": "value" } — fill by label/placeholder
 - fill: { selector: "#input", value: "text" } — fill by selector
 - type: "text" — type into focused element
