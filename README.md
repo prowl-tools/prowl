@@ -196,6 +196,7 @@ workflow as `.prowl/github-workflow.example.yml` and tells you to copy it into
 place:
 
 ```bash
+mkdir -p .github/workflows
 cp .prowl/github-workflow.example.yml .github/workflows/prowl.yml
 ```
 

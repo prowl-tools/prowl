@@ -1,9 +1,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import readline, { type Interface as ReadlineInterface } from "node:readline";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { buildInitCommand, scaffoldProwlDir, PRESETS, isPresetName } from "../src/cli/commands/init.js";
 import { CONFIG_DIR, loadConfig, loadHunt } from "../src/config/loader.js";
+
+const CI_ENVIRONMENT_VARIABLES = ["CI", "GITHUB_ACTIONS", "TRAVIS", "JENKINS_URL", "CIRCLECI"] as const;
 
 describe("prowl init", () => {
   let tempDir: string;
@@ -458,6 +461,101 @@ describe("prowl init --preset", () => {
     return fs.existsSync(prowlPath(...parts));
   }
 
+  function expectStandardScaffold(): void {
+    expect(exists("hunts", "hello.yml")).toBe(true);
+    expect(exists("hunts", "login-flow.yml")).toBe(true);
+    expect(exists("hunts", "form.yml")).toBe(true);
+    expect(exists("hunts", "macos-hello.yml")).toBe(true);
+    expect(exists("github-workflow.example.yml")).toBe(false);
+    expect(exists("AGENTS.md")).toBe(false);
+  }
+
+  function setStreamTTY(stream: NodeJS.ReadStream | NodeJS.WriteStream, value: boolean): () => void {
+    const descriptor = Object.getOwnPropertyDescriptor(stream, "isTTY");
+    Object.defineProperty(stream, "isTTY", { configurable: true, value });
+
+    return () => {
+      if (descriptor) {
+        Object.defineProperty(stream, "isTTY", descriptor);
+      } else {
+        delete (stream as { isTTY?: boolean }).isTTY;
+      }
+    };
+  }
+
+  function clearCIEnvironment(): () => void {
+    const previous = new Map<string, string | undefined>();
+    for (const name of CI_ENVIRONMENT_VARIABLES) {
+      previous.set(name, process.env[name]);
+      delete process.env[name];
+    }
+
+    return () => {
+      for (const [name, value] of previous) {
+        if (value === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
+      }
+    };
+  }
+
+  async function withInteractiveTerminal<T>(fn: () => Promise<T>): Promise<T> {
+    const restoreStdin = setStreamTTY(process.stdin, true);
+    const restoreStdout = setStreamTTY(process.stdout, true);
+    const restoreEnvironment = clearCIEnvironment();
+
+    try {
+      return await fn();
+    } finally {
+      restoreEnvironment();
+      restoreStdout();
+      restoreStdin();
+    }
+  }
+
+  type PromptMock =
+    | { answer: string }
+    | { close: true }
+    | { error: Error };
+
+  function mockPresetPrompt(mode: PromptMock) {
+    return vi.spyOn(readline, "createInterface").mockImplementation(() => {
+      const mockInterface = {
+        once(event: string, listener: (...args: unknown[]) => void) {
+          if ("close" in mode && event === "close") {
+            queueMicrotask(() => listener());
+          }
+          if ("error" in mode && event === "error") {
+            queueMicrotask(() => listener(mode.error));
+          }
+          return mockInterface;
+        },
+        question(_query: string, callback: (answer: string) => void) {
+          if ("answer" in mode) {
+            callback(mode.answer);
+          }
+        },
+        close() {}
+      };
+      return mockInterface as unknown as ReadlineInterface;
+    });
+  }
+
+  async function runWithPrompt(mode: PromptMock): Promise<void> {
+    const promptSpy = mockPresetPrompt(mode);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      await withInteractiveTerminal(() => runInit());
+      expect(promptSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      logSpy.mockRestore();
+      promptSpy.mockRestore();
+    }
+  }
+
   it("PRESETS lists the four persona presets", () => {
     expect([...PRESETS]).toEqual(["solo", "team", "ci", "agent"]);
     expect(isPresetName("solo")).toBe(true);
@@ -563,13 +661,99 @@ describe("prowl init --preset", () => {
     await runInit();
 
     // Standard scaffold ships the default four hunts (including macOS starter).
+    expectStandardScaffold();
+  });
+
+  it("CI environments do not prompt even when streams look interactive", async () => {
+    const restoreStdin = setStreamTTY(process.stdin, true);
+    const restoreStdout = setStreamTTY(process.stdout, true);
+    const previousCI = process.env.CI;
+    const promptSpy = vi.spyOn(readline, "createInterface").mockImplementation(() => {
+      throw new Error("prompt should not run in CI");
+    });
+
+    try {
+      process.env.CI = "true";
+      await runInit();
+
+      expect(promptSpy).not.toHaveBeenCalled();
+      expectStandardScaffold();
+    } finally {
+      if (previousCI === undefined) {
+        delete process.env.CI;
+      } else {
+        process.env.CI = previousCI;
+      }
+      promptSpy.mockRestore();
+      restoreStdout();
+      restoreStdin();
+    }
+  });
+
+  it("interactive menu accepts a numeric preset selection", async () => {
+    await runWithPrompt({ answer: "2" });
+
     expect(exists("hunts", "hello.yml")).toBe(true);
+    expect(exists("hunts", "first-flow.yml")).toBe(true);
+    expect(exists("hunts", "login-flow.yml")).toBe(false);
+    expect(exists("hunts", "macos-hello.yml")).toBe(false);
+  });
+
+  it("interactive menu accepts a direct preset name", async () => {
+    await runWithPrompt({ answer: "team" });
+
     expect(exists("hunts", "login-flow.yml")).toBe(true);
+    expect(exists("hunts", "crud.yml")).toBe(true);
     expect(exists("hunts", "form.yml")).toBe(true);
-    expect(exists("hunts", "macos-hello.yml")).toBe(true);
-    // Preset-only extras must not appear in the standard scaffold.
-    expect(exists("github-workflow.example.yml")).toBe(false);
-    expect(exists("AGENTS.md")).toBe(false);
+  });
+
+  it.each(["2abc", "99"])(
+    "interactive menu falls back to standard for invalid input %s",
+    async (answer) => {
+      await runWithPrompt({ answer });
+
+      expectStandardScaffold();
+    }
+  );
+
+  it("interactive menu falls back to standard for empty input", async () => {
+    await runWithPrompt({ answer: "" });
+
+    expectStandardScaffold();
+  });
+
+  it("interactive menu falls back to standard on stdin EOF", async () => {
+    await runWithPrompt({ close: true });
+
+    expectStandardScaffold();
+  });
+
+  it("reports readline failures before force-scaffolding", async () => {
+    await runInit(["--preset", "solo"]);
+    const configPath = prowlPath("config.yml");
+    fs.writeFileSync(configPath, "user config");
+
+    const originalExitCode = process.exitCode;
+    const promptSpy = mockPresetPrompt({ error: new Error("input failed") });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      process.exitCode = undefined;
+      await withInteractiveTerminal(() => runInit(["--force"]));
+
+      expect(process.exitCode).toBe(1);
+      expect(promptSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Could not read preset choice: input failed"));
+      expect(fs.readFileSync(configPath, "utf-8")).toBe("user config");
+      expect(exists("hunts", "first-flow.yml")).toBe(true);
+      expect(exists("hunts", "macos-hello.yml")).toBe(false);
+    } finally {
+      process.exitCode = originalExitCode;
+      errorSpy.mockRestore();
+      logSpy.mockRestore();
+      promptSpy.mockRestore();
+    }
   });
 
   it("scaffoldProwlDir() with no preset matches the standard scaffold (doctor --fix path)", () => {

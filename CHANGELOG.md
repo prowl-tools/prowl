@@ -31,6 +31,10 @@ All notable changes to Prowl will be documented in this file.
   records its own video into its own run directory.
 
 ### Fixed
+- **`prowl init` prompt hardening.** Common CI environment variables now force the
+  standard non-interactive scaffold even when streams look like pseudo-TTYs;
+  malformed numeric menu input such as `2abc` falls back to the standard scaffold;
+  and readline failures are reported before any `--force` re-scaffold can start.
 - **Config-level `artifacts.junit: true` is honored again.** `prowl run` and
   `prowl ci` coerced the absent `--junit` flag to `false`, which always overrode
   the config value — so the documented `artifacts.junit` config option never took

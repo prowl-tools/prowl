@@ -12,6 +12,8 @@ import { CONFIG_DIR } from "../../config/loader.js";
 export const PRESETS = ["solo", "team", "ci", "agent"] as const;
 export type PresetName = (typeof PRESETS)[number];
 
+const CI_ENVIRONMENT_VARIABLES = ["CI", "GITHUB_ACTIONS", "TRAVIS", "JENKINS_URL", "CIRCLECI"] as const;
+
 export function isPresetName(value: string): value is PresetName {
   return (PRESETS as readonly string[]).includes(value);
 }
@@ -307,7 +309,8 @@ export function scaffoldProwlDir(root: string, preset?: PresetName): void {
 
 /** True only when both stdin and stdout are interactive terminals. */
 function isInteractive(): boolean {
-  return Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  const isCI = CI_ENVIRONMENT_VARIABLES.some((name) => Boolean(process.env[name]));
+  return !isCI && Boolean(process.stdin.isTTY && process.stdout.isTTY);
 }
 
 interface PromptChoice {
@@ -326,9 +329,11 @@ const PROMPT_CHOICES: PromptChoice[] = [
 
 /**
  * Present a numbered menu of presets and resolve the chosen one. Uses only
- * `node:readline` (no dependencies). Enter with no choice, or any read failure,
- * resolves to `undefined` (the standard scaffold). Callers must confirm the
- * session is interactive before calling — non-TTY sessions never prompt.
+ * `node:readline` (no dependencies). Enter with no choice, EOF, or unrecognized
+ * input resolves to `undefined` (the standard scaffold). Readline errors are
+ * reported to the caller instead of silently changing the chosen scaffold.
+ * Callers must confirm the session is interactive before calling — non-TTY
+ * sessions never prompt.
  */
 async function promptForPreset(): Promise<PresetName | undefined> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -351,17 +356,20 @@ async function promptForPreset(): Promise<PresetName | undefined> {
       return undefined; // Enter with no choice → standard
     }
 
-    const index = Number.parseInt(trimmed, 10);
-    if (Number.isInteger(index) && index >= 1 && index <= PROMPT_CHOICES.length) {
-      return PROMPT_CHOICES[index - 1]?.preset;
+    if (/^\d+$/.test(trimmed)) {
+      const index = Number.parseInt(trimmed, 10);
+      if (index >= 1 && index <= PROMPT_CHOICES.length) {
+        return PROMPT_CHOICES[index - 1]?.preset;
+      }
+      return undefined;
     }
     if (isPresetName(trimmed)) {
       return trimmed;
     }
     // Unrecognized input falls back to the safe default.
     return undefined;
-  } catch {
-    return undefined; // any read failure → standard
+  } catch (error) {
+    throw new Error(`Could not read preset choice: ${errorMessage(error)}`);
   } finally {
     rl.close();
   }
@@ -439,7 +447,13 @@ export function buildInitCommand(): Command {
       // Only prompt when no preset was given and the session is interactive.
       // Non-TTY sessions keep today's exact behavior (standard scaffold).
       if (options.preset === undefined && isInteractive()) {
-        preset = await promptForPreset();
+        try {
+          preset = await promptForPreset();
+        } catch (error) {
+          console.error(chalk.red(errorMessage(error)));
+          process.exitCode = 1;
+          return;
+        }
       }
 
       try {
