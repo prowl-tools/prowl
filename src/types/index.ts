@@ -363,12 +363,21 @@ export type RunResult = {
   retrySummary?: string;
 };
 
+/**
+ * Why a hunt was skipped in a `prowl ci` run. `include`/`exclude` come from tag
+ * filters; `fail-fast` marks a hunt that was never started because an earlier
+ * hunt failed under `--fail-fast`.
+ */
+export type CiSkipReason = "include" | "exclude" | "fail-fast";
+
 export type CiHuntResult = {
   hunt: string;
   status: "pass" | "fail" | "skipped";
   durationMs: number;
   runDir?: string;
   error?: string;
+  /** Why the hunt was skipped; present only when `status` is "skipped". */
+  skipReason?: CiSkipReason;
 };
 
 export type CiStatus = "pass" | "fail" | "no-hunts" | "all-skipped";
