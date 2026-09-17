@@ -201,9 +201,14 @@ export async function runSuite(options: RunSuiteOptions = {}): Promise<RunSuiteR
     const tasks = huntsToRun.map((entry) => ({
       ...entry,
       task: async (): Promise<CiHuntResult> => {
-        const result = await buildTask(entry.huntName)();
-        if (failFast && result.status === "fail") bail = true;
-        return result;
+        try {
+          const result = await buildTask(entry.huntName)();
+          if (failFast && result.status === "fail") bail = true;
+          return result;
+        } catch (error) {
+          if (failFast) bail = true;
+          throw error;
+        }
       }
     }));
     const parallelResults = await runWithConcurrency(

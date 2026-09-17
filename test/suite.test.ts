@@ -72,7 +72,9 @@ describe("runSuite", () => {
         // Mirror the real worker-pool: honor shouldStop and leave holes for
         // tasks that are never started so fail-fast bail can be exercised.
         const normalized = Number.isFinite(concurrency) && concurrency > 0 ? Math.floor(concurrency) : 1;
-        const results: Array<{ status: "fulfilled"; value: unknown } | { status: "rejected"; reason: unknown }> =
+        const results: Array<
+          { status: "fulfilled"; value: unknown } | { status: "rejected"; reason: unknown } | undefined
+        > =
           new Array(tasks.length);
         let nextIndex = 0;
         async function worker() {
@@ -460,6 +462,42 @@ describe("runSuite", () => {
         { hunt: "b", status: "pass", skipReason: undefined },
         { hunt: "c", status: "skipped", skipReason: "fail-fast" },
         { hunt: "d", status: "skipped", skipReason: "fail-fast" }
+      ]);
+      expect(result.status).toBe("fail");
+    });
+
+    it("bails in parallel mode when a hunt task rejects", async () => {
+      mockListHunts.mockReturnValue(["a", "b", "c"]);
+      mockRunHunt.mockImplementation(async (options: { huntName: string }) => {
+        if (options.huntName === "a") throw new Error("original failure");
+        if (options.huntName === "b") {
+          await new Promise((r) => setTimeout(r, 20));
+          return makeRunResult("b", "pass");
+        }
+        return makeRunResult(options.huntName, "pass");
+      });
+      // Force an unexpected task-level rejection after a and b have both started.
+      let nowCalls = 0;
+      vi.spyOn(Date, "now").mockImplementation(() => {
+        nowCalls++;
+        if (nowCalls === 4) throw new Error("clock failed");
+        return 1000 + nowCalls;
+      });
+
+      const { result } = await runSuite({ parallel: 2, failFast: true });
+
+      const ran = mockRunHunt.mock.calls.map((c) => (c[0] as { huntName: string }).huntName).sort();
+      expect(ran).toEqual(["a", "b"]);
+      const huntSummaries = result.hunts.map((h) => ({
+        hunt: h.hunt,
+        status: h.status,
+        skipReason: h.skipReason,
+        error: h.error
+      }));
+      expect(huntSummaries).toEqual([
+        { hunt: "a", status: "fail", skipReason: undefined, error: "clock failed" },
+        { hunt: "b", status: "pass", skipReason: undefined, error: undefined },
+        { hunt: "c", status: "skipped", skipReason: "fail-fast", error: undefined }
       ]);
       expect(result.status).toBe("fail");
     });

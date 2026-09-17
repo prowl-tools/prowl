@@ -16,12 +16,12 @@ export async function runWithConcurrency<T>(
   tasks: Array<() => Promise<T>>,
   concurrency: number,
   options: RunWithConcurrencyOptions = {}
-): Promise<Array<ConcurrencyResult<T>>> {
+): Promise<Array<ConcurrencyResult<T> | undefined>> {
   const normalizedConcurrency =
     Number.isFinite(concurrency) && concurrency > 0
       ? Math.floor(concurrency)
       : 1;
-  const results: Array<ConcurrencyResult<T>> = new Array(tasks.length);
+  const results: Array<ConcurrencyResult<T> | undefined> = new Array(tasks.length);
   let nextIndex = 0;
   const shouldStop = options.shouldStop;
 

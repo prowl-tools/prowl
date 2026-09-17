@@ -83,7 +83,9 @@ describe("ci command", () => {
           Number.isFinite(concurrency) && concurrency > 0
             ? Math.floor(concurrency)
             : 1;
-        const results: Array<{ status: "fulfilled"; value: unknown } | { status: "rejected"; reason: unknown }> =
+        const results: Array<
+          { status: "fulfilled"; value: unknown } | { status: "rejected"; reason: unknown } | undefined
+        > =
           new Array(tasks.length);
         let nextIndex = 0;
 
@@ -160,6 +162,8 @@ describe("ci command", () => {
     // profile is never started.
     expect(mockRunHunt).toHaveBeenCalledTimes(2);
     expect(process.exitCode).toBe(1);
+    const output = logSpy.mock.calls.map((call) => call[0]).join("\n");
+    expect(output).toContain("(skipped: fail-fast)");
   });
 
   it("--fail-fast marks remaining hunts as fail-fast skips in --json output", async () => {
