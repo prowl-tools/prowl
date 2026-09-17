@@ -76,6 +76,12 @@ export interface SessionDriver {
   // element interactions (explicit selector) --------------------------------
   click(selector: string): Promise<void>;
   clickFirst(selector: string): Promise<void>;
+  /** Double-click (Playwright `dblclick()`); web-only — native drivers reject it. */
+  dblclick(selector: string): Promise<void>;
+  dblclickFirst(selector: string): Promise<void>;
+  /** Right/secondary click (Playwright `click({ button: "right" })`); web-only. */
+  rightClick(selector: string): Promise<void>;
+  rightClickFirst(selector: string): Promise<void>;
   fill(selector: string, value: string): Promise<void>;
   fillFirst(selector: string, value: string): Promise<void>;
   press(selector: string, key: string): Promise<void>;
@@ -94,6 +100,10 @@ export interface SessionDriver {
   // semantic locators (role / label shorthand resolution) -------------------
   countByRole(role: string, name: string): Promise<number>;
   clickFirstByRole(role: string, name: string): Promise<void>;
+  /** Double-click the first element matching a role/name; web-only. */
+  dblclickFirstByRole(role: string, name: string): Promise<void>;
+  /** Right-click the first element matching a role/name; web-only. */
+  rightClickFirstByRole(role: string, name: string): Promise<void>;
   countByLabel(label: string): Promise<number>;
   fillFirstByLabel(label: string, value: string): Promise<void>;
   selectOptionFirstByLabel(label: string, value: string): Promise<void>;
