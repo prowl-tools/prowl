@@ -21,6 +21,8 @@ import path from "node:path";
  */
 export const WEB_ONLY_STEP_TYPES: ReadonlySet<string> = new Set([
   "navigate",
+  "doubleClick",
+  "rightClick",
   "waitForUrl",
   "waitForNetworkIdle",
   "waitForResponse",

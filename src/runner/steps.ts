@@ -82,6 +82,8 @@ type ScreenshotTaker = {
 function getStepType(step: Step): string {
   if ("navigate" in step) return "navigate";
   if ("click" in step) return "click";
+  if ("doubleClick" in step) return "doubleClick";
+  if ("rightClick" in step) return "rightClick";
   if ("fill" in step) return "fill";
   if ("type" in step) return "type";
   if ("selectOption" in step) return "selectOption";
@@ -152,6 +154,14 @@ function applyRuntimeVars(step: Step, vars: Map<string, string>): Step {
   if ("click" in step) {
     if (typeof step.click === "string") return { click: sub(step.click) };
     return { click: { selector: sub(step.click.selector) } };
+  }
+  if ("doubleClick" in step) {
+    if (typeof step.doubleClick === "string") return { doubleClick: sub(step.doubleClick) };
+    return { doubleClick: { selector: sub(step.doubleClick.selector) } };
+  }
+  if ("rightClick" in step) {
+    if (typeof step.rightClick === "string") return { rightClick: sub(step.rightClick) };
+    return { rightClick: { selector: sub(step.rightClick.selector) } };
   }
   if ("fill" in step) {
     if ("selector" in step.fill && "value" in step.fill) {
@@ -262,22 +272,82 @@ function getSinglePair(value: Record<string, string>, stepType: string): [string
   return entries[0];
 }
 
-async function clickByTextWithFallback(
+/**
+ * The driver verbs a pointer-click step (`click` / `doubleClick` / `rightClick`)
+ * dispatches through. Each variant supplies its own trio so the resolution,
+ * guardrail, and healing logic below is shared rather than duplicated per step.
+ */
+type PointerClickOps = {
+  /** The step key, also used as the result `type` label. */
+  stepKey: "click" | "doubleClick" | "rightClick";
+  /** Act on the single element matched by an explicit selector. */
+  onSelector: (driver: SessionDriver, selector: string) => Promise<void>;
+  /** Act on the first element matched by role/name (semantic form). */
+  onFirstByRole: (driver: SessionDriver, role: string, name: string) => Promise<void>;
+  /** Act on the first element matched by a text selector (semantic fallback). */
+  onFirstBySelector: (driver: SessionDriver, selector: string) => Promise<void>;
+};
+
+/**
+ * Resolve a semantic (plain-string) pointer target the way `click` does: prefer a
+ * `role=button[name=…]` match, falling back to an exact-text selector. Shared by
+ * every pointer-click variant so `doubleClick`/`rightClick` get identical
+ * text/role ergonomics. Returns the selector that was acted on.
+ */
+async function pointerClickByTextWithFallback(
   driver: SessionDriver,
   policy: RunPolicy,
-  text: string
+  text: string,
+  ops: PointerClickOps
 ): Promise<string> {
   const roleSelector = `role=button[name="${escapeForAttribute(text)}"]`;
   policy.assertAllowedSelector(roleSelector);
   if (await driver.countByRole("button", text)) {
-    await driver.clickFirstByRole("button", text);
+    await ops.onFirstByRole(driver, "button", text);
     return roleSelector;
   }
 
   const selector = exactTextSelector(text);
   policy.assertAllowedSelector(selector);
-  await driver.clickFirst(selector);
+  await ops.onFirstBySelector(driver, selector);
   return selector;
+}
+
+/**
+ * Build a step handler for a pointer-click variant. All three variants share the
+ * `string | { selector }` shape, the forbidden-selector guard, and self-healing
+ * on the explicit-selector path (via `resolveActionSelector`) — only the driver
+ * verbs differ.
+ */
+function makePointerClickHandler(ops: PointerClickOps): StepHandler {
+  return {
+    capabilities: ["interact", "query"],
+    run: async (h) => {
+      const value = (h.step as Record<string, string | { selector: string }>)[ops.stepKey];
+      if (value === undefined) unknownStep();
+      let selector: string;
+      let healedFrom: string | undefined;
+      if (typeof value === "string") {
+        selector = await pointerClickByTextWithFallback(h.driver, h.policy, value, ops);
+      } else {
+        const resolved = await h.policy.resolveActionSelector(value.selector);
+        await ops.onSelector(h.driver, resolved.selector);
+        selector = resolved.selector;
+        healedFrom = resolved.healedFrom;
+      }
+      h.policy.ensureLocationAllowed(h.driver);
+      return {
+        kind: "result",
+        result: {
+          type: ops.stepKey,
+          status: "pass",
+          durationMs: Date.now() - h.stepStart,
+          selector,
+          ...(healedFrom ? { healedFrom } : {})
+        }
+      };
+    }
+  };
 }
 
 async function fillByLabelOrPlaceholder(
@@ -653,33 +723,26 @@ const STEP_HANDLERS: Record<string, StepHandler> = {
     }
   },
 
-  click: {
-    capabilities: ["interact", "query"],
-    run: async (h) => {
-      if (!("click" in h.step)) unknownStep();
-      let selector: string;
-      let healedFrom: string | undefined;
-      if (typeof h.step.click === "string") {
-        selector = await clickByTextWithFallback(h.driver, h.policy, h.step.click);
-      } else {
-        const resolved = await h.policy.resolveActionSelector(h.step.click.selector);
-        await h.driver.click(resolved.selector);
-        selector = resolved.selector;
-        healedFrom = resolved.healedFrom;
-      }
-      h.policy.ensureLocationAllowed(h.driver);
-      return {
-        kind: "result",
-        result: {
-          type: "click",
-          status: "pass",
-          durationMs: Date.now() - h.stepStart,
-          selector,
-          ...(healedFrom ? { healedFrom } : {})
-        }
-      };
-    }
-  },
+  click: makePointerClickHandler({
+    stepKey: "click",
+    onSelector: (driver, selector) => driver.click(selector),
+    onFirstByRole: (driver, role, name) => driver.clickFirstByRole(role, name),
+    onFirstBySelector: (driver, selector) => driver.clickFirst(selector)
+  }),
+
+  doubleClick: makePointerClickHandler({
+    stepKey: "doubleClick",
+    onSelector: (driver, selector) => driver.dblclick(selector),
+    onFirstByRole: (driver, role, name) => driver.dblclickFirstByRole(role, name),
+    onFirstBySelector: (driver, selector) => driver.dblclickFirst(selector)
+  }),
+
+  rightClick: makePointerClickHandler({
+    stepKey: "rightClick",
+    onSelector: (driver, selector) => driver.rightClick(selector),
+    onFirstByRole: (driver, role, name) => driver.rightClickFirstByRole(role, name),
+    onFirstBySelector: (driver, selector) => driver.rightClickFirst(selector)
+  }),
 
   fill: {
     capabilities: ["interact", "query"],

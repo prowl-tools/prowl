@@ -142,6 +142,19 @@ export const clickStepSchema = z
     click: z.union([z.object({ selector: z.string().min(1) }).strict(), z.string().min(1)])
   })
   .strict();
+// doubleClick / rightClick mirror `click`'s `string | { selector }` shape so hunt
+// authors get consistent ergonomics (semantic text/role or explicit selector).
+// Both are web-only (see WEB_ONLY_STEP_TYPES in config/target.ts).
+export const doubleClickStepSchema = z
+  .object({
+    doubleClick: z.union([z.object({ selector: z.string().min(1) }).strict(), z.string().min(1)])
+  })
+  .strict();
+export const rightClickStepSchema = z
+  .object({
+    rightClick: z.union([z.object({ selector: z.string().min(1) }).strict(), z.string().min(1)])
+  })
+  .strict();
 
 const singleKeyValueSchema = z
   .record(z.string().min(1), z.string())
@@ -458,6 +471,8 @@ export const waitForDownloadStepSchema = z
 export const stepSchema: z.ZodType<Step> = z.union([
   navigateStepSchema,
   clickStepSchema,
+  doubleClickStepSchema,
+  rightClickStepSchema,
   fillStepSchema,
   typeStepSchema,
   pressStepSchema,
