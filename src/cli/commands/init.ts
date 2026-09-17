@@ -1,11 +1,22 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import chalk from "chalk";
 import { welcomeBanner } from "../mascot.js";
 import { CONFIG_DIR } from "../../config/loader.js";
+
+/** Persona-specific starter sets. Each maps to `examples/presets/<name>/`. */
+export const PRESETS = ["solo", "team", "ci", "agent"] as const;
+export type PresetName = (typeof PRESETS)[number];
+
+const CI_ENVIRONMENT_VARIABLES = ["CI", "GITHUB_ACTIONS", "TRAVIS", "JENKINS_URL", "CIRCLECI"] as const;
+
+export function isPresetName(value: string): value is PresetName {
+  return (PRESETS as readonly string[]).includes(value);
+}
 
 interface StagedTemplateFile {
   source: string;
@@ -118,15 +129,15 @@ function gitignoreTemplate(): string {
   ].join("\n");
 }
 
-function stageScaffoldTemplates(examplesDir: string): { stageDir: string; files: StagedTemplateFile[] } {
+function stageScaffoldTemplates(sourceDir: string): { stageDir: string; files: StagedTemplateFile[] } {
   const stageDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-init-"));
   const files: StagedTemplateFile[] = [];
 
   try {
-    copyFile(path.join(examplesDir, "config.yml"), path.join(stageDir, "config.yml"));
+    copyFile(path.join(sourceDir, "config.yml"), path.join(stageDir, "config.yml"));
     files.push({ source: path.join(stageDir, "config.yml"), relativePath: "config.yml" });
 
-    const exampleHuntsDir = path.join(examplesDir, "hunts");
+    const exampleHuntsDir = path.join(sourceDir, "hunts");
     const huntFiles = fs.readdirSync(exampleHuntsDir).filter((f) => f.endsWith(".yml"));
     for (const huntFile of huntFiles) {
       const relativePath = path.join("hunts", huntFile);
@@ -137,6 +148,23 @@ function stageScaffoldTemplates(examplesDir: string): { stageDir: string; files:
     const gitignorePath = path.join(stageDir, ".gitignore");
     fs.writeFileSync(gitignorePath, gitignoreTemplate());
     files.push({ source: gitignorePath, relativePath: ".gitignore" });
+
+    // Extra top-level preset files that live directly under the source dir —
+    // e.g. `github-workflow.example.yml` (ci), `.env.example` and `AGENTS.md`
+    // (agent). `config.yml`, the `hunts/` directory, and `.gitignore` are all
+    // handled above. The default `examples/` dir has no such extras, so the
+    // standard scaffold is unaffected. Sorted for deterministic ordering.
+    const extras = fs
+      .readdirSync(sourceDir)
+      .filter((entry) => {
+        if (entry === "config.yml" || entry === ".gitignore") return false;
+        return fs.statSync(path.join(sourceDir, entry)).isFile();
+      })
+      .sort();
+    for (const extra of extras) {
+      copyFile(path.join(sourceDir, extra), path.join(stageDir, extra));
+      files.push({ source: path.join(stageDir, extra), relativePath: extra });
+    }
 
     return { stageDir, files };
   } catch (error) {
@@ -224,25 +252,33 @@ function rollbackDestination(prowlDir: string, rollback: DestinationRollback): v
 
 /**
  * Scaffold a `.prowl/` directory under `root` from the package's bundled
- * `examples/` templates: `config.yml`, the starter hunts, and a `.gitignore`
- * that keeps run artifacts and secrets out of version control. This is the
- * single code path both `prowl init` and `prowl doctor --fix` use so the
- * templates are never duplicated. Throws (rather than exiting) when the bundled
- * examples are missing, so callers can decide how to surface the failure.
+ * templates: `config.yml`, the starter hunts, a `.gitignore` that keeps run
+ * artifacts and secrets out of version control, and any extra preset files.
+ * Without a `preset` it uses the default top-level `examples/` set (the exact
+ * historical behavior); with one it uses `examples/presets/<preset>/`. This is
+ * the single code path `prowl init` and `prowl doctor --fix` share — the latter
+ * always scaffolds the default set — so the staging/rollback/symlink-safety
+ * logic is never duplicated. Throws (rather than exiting) when the bundled
+ * templates are missing, so callers can decide how to surface the failure.
  */
-export function scaffoldProwlDir(root: string): void {
+export function scaffoldProwlDir(root: string, preset?: PresetName): void {
   const prowlDir = path.join(root, CONFIG_DIR);
 
   const packageRoot = getPackageRoot();
   const examplesDir = path.join(packageRoot, "examples");
-  const exampleConfig = path.join(examplesDir, "config.yml");
-  const exampleHuntsDir = path.join(examplesDir, "hunts");
+  const sourceDir = preset ? path.join(examplesDir, "presets", preset) : examplesDir;
+  const sourceConfig = path.join(sourceDir, "config.yml");
+  const sourceHuntsDir = path.join(sourceDir, "hunts");
 
-  if (!fs.existsSync(exampleConfig) || !fs.existsSync(exampleHuntsDir)) {
-    throw new Error("Examples not found in package. Reinstall prowl-tools.");
+  if (!fs.existsSync(sourceConfig) || !fs.existsSync(sourceHuntsDir)) {
+    throw new Error(
+      preset
+        ? `Preset "${preset}" templates not found in package. Reinstall prowl-tools.`
+        : "Examples not found in package. Reinstall prowl-tools."
+    );
   }
 
-  const staged = stageScaffoldTemplates(examplesDir);
+  const staged = stageScaffoldTemplates(sourceDir);
   let rollback: DestinationRollback | null = null;
   let keepBackup = false;
   try {
@@ -271,12 +307,133 @@ export function scaffoldProwlDir(root: string): void {
   }
 }
 
+/** True only when both stdin and stdout are interactive terminals. */
+function isInteractive(): boolean {
+  const isCI = CI_ENVIRONMENT_VARIABLES.some((name) => Boolean(process.env[name]));
+  return !isCI && Boolean(process.stdin.isTTY && process.stdout.isTTY);
+}
+
+interface PromptChoice {
+  label: string;
+  preset: PresetName | undefined;
+  blurb: string;
+}
+
+const PROMPT_CHOICES: PromptChoice[] = [
+  { label: "standard", preset: undefined, blurb: "default starter hunts (hello, login-flow, form, macOS)" },
+  { label: "solo", preset: "solo", blurb: "minimal quick-start for a solo project" },
+  { label: "team", preset: "team", blurb: "full guardrails + auth/CRUD/forms hunts" },
+  { label: "ci", preset: "ci", blurb: "JUnit reports + a GitHub Actions workflow" },
+  { label: "agent", preset: "agent", blurb: "JSON/MCP surface for AI agents" }
+];
+
+/**
+ * Present a numbered menu of presets and resolve the chosen one. Uses only
+ * `node:readline` (no dependencies). Enter with no choice, EOF, or unrecognized
+ * input resolves to `undefined` (the standard scaffold). Readline errors are
+ * reported to the caller instead of silently changing the chosen scaffold.
+ * Callers must confirm the session is interactive before calling — non-TTY
+ * sessions never prompt.
+ */
+async function promptForPreset(): Promise<PresetName | undefined> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    console.log(chalk.bold("Choose a starting point:"));
+    PROMPT_CHOICES.forEach((choice, index) => {
+      console.log(`  ${index + 1}) ${chalk.cyan(choice.label)} — ${choice.blurb}`);
+    });
+
+    const answer = await new Promise<string>((resolve, reject) => {
+      rl.once("error", reject);
+      // Ctrl+D (EOF) closes the interface without ever invoking the question
+      // callback — resolve to the standard scaffold instead of hanging.
+      rl.once("close", () => resolve(""));
+      rl.question("Enter choice [1]: ", resolve);
+    });
+
+    const trimmed = answer.trim();
+    if (trimmed === "") {
+      return undefined; // Enter with no choice → standard
+    }
+
+    if (/^\d+$/.test(trimmed)) {
+      const index = Number.parseInt(trimmed, 10);
+      if (index >= 1 && index <= PROMPT_CHOICES.length) {
+        return PROMPT_CHOICES[index - 1]?.preset;
+      }
+      return undefined;
+    }
+    if (isPresetName(trimmed)) {
+      return trimmed;
+    }
+    // Unrecognized input falls back to the safe default.
+    return undefined;
+  } catch (error) {
+    throw new Error(`Could not read preset choice: ${errorMessage(error)}`);
+  } finally {
+    rl.close();
+  }
+}
+
+/**
+ * Print the per-preset post-init guidance. The default (no preset) branch is
+ * byte-identical to the historical `prowl init` output.
+ */
+function printPostInitHints(preset?: PresetName): void {
+  const dir = CONFIG_DIR;
+  switch (preset) {
+    case "solo":
+      console.log(chalk.gray("  Run ") + chalk.bold("prowl run hello") + chalk.gray(" to get started."));
+      console.log(chalk.gray("  Point ") + chalk.cyan(`${dir}/config.yml`) + chalk.gray(" at your app, then try ") + chalk.cyan(`${dir}/hunts/first-flow.yml`) + chalk.gray("."));
+      console.log(chalk.gray("  Desktop-first? Prowl drives native macOS apps too — see the macOS Target section of the README.") + "\n");
+      break;
+    case "team":
+      console.log(chalk.gray("  Run ") + chalk.bold("prowl ci") + chalk.gray(" to run the whole suite."));
+      console.log(chalk.gray("  Starters: ") + chalk.cyan(`${dir}/hunts/login-flow.yml`) + chalk.gray(" (auth), ") + chalk.cyan(`${dir}/hunts/crud.yml`) + chalk.gray(" (CRUD), ") + chalk.cyan(`${dir}/hunts/form.yml`) + chalk.gray(" (forms)."));
+      console.log(chalk.gray("  Review the guardrails in ") + chalk.cyan(`${dir}/config.yml`) + chalk.gray(" (allowedDomains, forbiddenSelectors) before running against real data.") + "\n");
+      break;
+    case "ci":
+      console.log(chalk.gray("  Run ") + chalk.bold("prowl ci --junit") + chalk.gray(" to produce JUnit reports."));
+      console.log(chalk.gray("  Copy ") + chalk.cyan(`${dir}/github-workflow.example.yml`) + chalk.gray(" to ") + chalk.cyan(".github/workflows/prowl.yml") + chalk.gray(" to run hunts in GitHub Actions."));
+      console.log(chalk.gray("  (prowl init only writes under ") + chalk.cyan(dir) + chalk.gray(", so the workflow ships there for you to move.)") + "\n");
+      break;
+    case "agent":
+      console.log(chalk.gray("  Run ") + chalk.bold("prowl run hello --json") + chalk.gray(" for machine-readable output."));
+      console.log(chalk.gray("  See ") + chalk.cyan(`${dir}/AGENTS.md`) + chalk.gray(" for the JSON/CLI/MCP surface and exit codes."));
+      console.log(chalk.gray("  Copy ") + chalk.cyan(`${dir}/.env.example`) + chalk.gray(" to ") + chalk.cyan(`${dir}/.env`) + chalk.gray(" and fill in secrets.") + "\n");
+      break;
+    default:
+      console.log(chalk.gray("  Run ") + chalk.bold("prowl run hello") + chalk.gray(" to get started."));
+      console.log(chalk.gray("  See ") + chalk.cyan(`${dir}/hunts/login-flow.yml`) + chalk.gray(" (auth) and ") + chalk.cyan(`${dir}/hunts/form.yml`) + chalk.gray(" (web forms) for fuller examples."));
+      console.log(chalk.gray("  Desktop-first? ") + chalk.cyan(`${dir}/hunts/macos-hello.yml`) + chalk.gray(" is a macOS starter (experimental — see its comments to enable).") + "\n");
+  }
+}
+
 export function buildInitCommand(): Command {
   const command = new Command("init")
     .option("--force", `Overwrite existing ${CONFIG_DIR} directory`)
-    .action((options) => {
+    .option(
+      "--preset <name>",
+      `Persona-specific starter set: ${PRESETS.join(", ")} (default: standard)`
+    )
+    .action(async (options) => {
       const root = process.cwd();
       const prowlDir = path.join(root, CONFIG_DIR);
+
+      // Resolve an explicit --preset first so a typo fails fast, before any
+      // prompt or filesystem work.
+      let preset: PresetName | undefined;
+      if (options.preset !== undefined) {
+        if (!isPresetName(options.preset)) {
+          console.error(
+            chalk.red(`Unknown preset "${options.preset}". Choose one of: ${PRESETS.join(", ")}.`)
+          );
+          process.exitCode = 1;
+          return;
+        }
+        preset = options.preset;
+      }
+
       if (fs.existsSync(prowlDir) && !options.force) {
         console.error(
           chalk.red(
@@ -287,8 +444,20 @@ export function buildInitCommand(): Command {
         return;
       }
 
+      // Only prompt when no preset was given and the session is interactive.
+      // Non-TTY sessions keep today's exact behavior (standard scaffold).
+      if (options.preset === undefined && isInteractive()) {
+        try {
+          preset = await promptForPreset();
+        } catch (error) {
+          console.error(chalk.red(errorMessage(error)));
+          process.exitCode = 1;
+          return;
+        }
+      }
+
       try {
-        scaffoldProwlDir(root);
+        scaffoldProwlDir(root, preset);
       } catch (error) {
         console.error(chalk.red(error instanceof Error ? error.message : "init failed"));
         process.exitCode = 1;
@@ -297,9 +466,7 @@ export function buildInitCommand(): Command {
 
       console.log(welcomeBanner());
       console.log(chalk.green(`  Initialized ${CONFIG_DIR} directory.`));
-      console.log(chalk.gray("  Run ") + chalk.bold("prowl run hello") + chalk.gray(" to get started."));
-      console.log(chalk.gray("  See ") + chalk.cyan(`${CONFIG_DIR}/hunts/login-flow.yml`) + chalk.gray(" (auth) and ") + chalk.cyan(`${CONFIG_DIR}/hunts/form.yml`) + chalk.gray(" (web forms) for fuller examples."));
-      console.log(chalk.gray("  Desktop-first? ") + chalk.cyan(`${CONFIG_DIR}/hunts/macos-hello.yml`) + chalk.gray(" is a macOS starter (experimental — see its comments to enable).") + "\n");
+      printPostInitHints(preset);
     });
 
   return command;

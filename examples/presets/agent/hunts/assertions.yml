@@ -1,0 +1,37 @@
+# Assertions Demo
+# ---
+# Shows the assertion surface an agent can rely on to make pass/fail decisions:
+# inline (mid-flow) assertions between steps, and hunt-level assertions that run
+# after all steps complete. When any assertion fails the hunt fails, `prowl run
+# assertions --json` reports "status": "fail", and the process exits non-zero.
+# Customize:
+#   - Point `navigate` at a real path and update the visible/text targets
+#
+# Run it:  prowl run assertions --json
+
+name: assertions
+description: Demonstrate inline and hunt-level assertions for programmatic checks
+
+tags:
+  - assertions
+  - agent
+
+steps:
+  - navigate: "/"
+
+  - waitForNetworkIdle:
+      timeout: 5000
+
+  # Inline assertion — verify an element is visible before continuing.
+  - assert:
+      visible: "Get Started"
+
+  # Inline assertion — verify the URL is what we expect at this point.
+  - assert:
+      urlIncludes: "/"
+
+# Hunt-level assertions — evaluated after every step above has run.
+assertions:
+  - urlIncludes: "/"
+  - noConsoleErrors: true
+  - noNetworkErrors: true

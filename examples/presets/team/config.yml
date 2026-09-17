@@ -1,0 +1,52 @@
+# Prowl Configuration (team preset)
+# Full config with guardrails filled in — a shared baseline for a team adding
+# regression tests. Check this file into version control so every teammate and
+# CI run uses the same settings.
+
+# Target application — the base URL for all hunt navigation.
+target:
+  url: "http://localhost:3000"
+
+# Browser settings.
+browser:
+  headless: true       # Set to false or use --headed to see the browser
+  slowMo: 0            # Milliseconds to wait between actions (useful for debugging)
+  timeout: 30000       # Default timeout for page operations (30s)
+
+# Artifact generation — what gets saved per run.
+artifacts:
+  screenshots: "on-failure"  # "on-failure" or "all" (screenshot every step)
+  networkHar: false          # Save network activity as HAR file
+  console: true              # Save browser console output
+
+# Hunt-level assertions — applied after every hunt's steps complete.
+assertions:
+  noConsoleErrors: true      # Fail if browser console has errors
+  noNetworkErrors: true      # Fail if any HTTP response >= 400
+  maxTotalTimeMs: 30000      # Max total time for all steps (30s)
+  networkIgnorePatterns: []  # URL patterns to ignore for network error checks
+
+# Safety guardrails — prevent accidental damage across the whole suite.
+guardrails:
+  # Cap the number of steps a single hunt may run. Raise this only if a
+  # legitimate flow genuinely needs more steps.
+  maxSteps: 50
+  # Only navigate to these domains. Add every host your app and its auth
+  # provider legitimately use; anything else fails the hunt.
+  allowedDomains:
+    - "localhost"
+    - "127.0.0.1"
+    - "0.0.0.0"
+    # - "staging.example.com"
+    # - "auth.example.com"
+  # Selectors that steps may never interact with — a safety net against a hunt
+  # clicking something destructive. Extend this list with your app's danger
+  # zones (bulk-delete buttons, "wipe account", etc.).
+  forbiddenSelectors:
+    - "[data-danger]"
+    - ".delete-btn"
+    # - "button:has-text('Delete account')"
+
+# Auth state — captured by `prowl login`, used to skip login in hunts.
+auth:
+  storageStatePath: ".prowl/auth-state.json"

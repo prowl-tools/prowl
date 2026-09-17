@@ -1,9 +1,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import readline, { type Interface as ReadlineInterface } from "node:readline";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
-import { buildInitCommand, scaffoldProwlDir } from "../src/cli/commands/init.js";
-import { CONFIG_DIR, loadHunt } from "../src/config/loader.js";
+import { buildInitCommand, scaffoldProwlDir, PRESETS, isPresetName } from "../src/cli/commands/init.js";
+import { CONFIG_DIR, loadConfig, loadHunt } from "../src/config/loader.js";
+
+const CI_ENVIRONMENT_VARIABLES = ["CI", "GITHUB_ACTIONS", "TRAVIS", "JENKINS_URL", "CIRCLECI"] as const;
 
 describe("prowl init", () => {
   let tempDir: string;
@@ -426,6 +429,370 @@ describe("prowl init", () => {
       process.exitCode = originalExitCode;
       errorSpy.mockRestore();
       copySpy.mockRestore();
+    }
+  });
+});
+
+describe("prowl init --preset", () => {
+  let tempDir: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-init-preset-"));
+    originalCwd = process.cwd();
+    process.chdir(tempDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  async function runInit(args: string[] = []) {
+    const cmd = buildInitCommand();
+    await cmd.parseAsync(["node", "prowl", ...args]);
+  }
+
+  function prowlPath(...parts: string[]): string {
+    return path.join(tempDir, ".prowl", ...parts);
+  }
+
+  function exists(...parts: string[]): boolean {
+    return fs.existsSync(prowlPath(...parts));
+  }
+
+  function expectStandardScaffold(): void {
+    expect(exists("hunts", "hello.yml")).toBe(true);
+    expect(exists("hunts", "login-flow.yml")).toBe(true);
+    expect(exists("hunts", "form.yml")).toBe(true);
+    expect(exists("hunts", "macos-hello.yml")).toBe(true);
+    expect(exists("github-workflow.example.yml")).toBe(false);
+    expect(exists("AGENTS.md")).toBe(false);
+  }
+
+  function setStreamTTY(stream: NodeJS.ReadStream | NodeJS.WriteStream, value: boolean): () => void {
+    const descriptor = Object.getOwnPropertyDescriptor(stream, "isTTY");
+    Object.defineProperty(stream, "isTTY", { configurable: true, value });
+
+    return () => {
+      if (descriptor) {
+        Object.defineProperty(stream, "isTTY", descriptor);
+      } else {
+        delete (stream as { isTTY?: boolean }).isTTY;
+      }
+    };
+  }
+
+  function clearCIEnvironment(): () => void {
+    const previous = new Map<string, string | undefined>();
+    for (const name of CI_ENVIRONMENT_VARIABLES) {
+      previous.set(name, process.env[name]);
+      delete process.env[name];
+    }
+
+    return () => {
+      for (const [name, value] of previous) {
+        if (value === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
+      }
+    };
+  }
+
+  async function withInteractiveTerminal<T>(fn: () => Promise<T>): Promise<T> {
+    const restoreStdin = setStreamTTY(process.stdin, true);
+    const restoreStdout = setStreamTTY(process.stdout, true);
+    const restoreEnvironment = clearCIEnvironment();
+
+    try {
+      return await fn();
+    } finally {
+      restoreEnvironment();
+      restoreStdout();
+      restoreStdin();
+    }
+  }
+
+  type PromptMock =
+    | { answer: string }
+    | { close: true }
+    | { error: Error };
+
+  function mockPresetPrompt(mode: PromptMock) {
+    return vi.spyOn(readline, "createInterface").mockImplementation(() => {
+      const mockInterface = {
+        once(event: string, listener: (...args: unknown[]) => void) {
+          if ("close" in mode && event === "close") {
+            queueMicrotask(() => listener());
+          }
+          if ("error" in mode && event === "error") {
+            queueMicrotask(() => listener(mode.error));
+          }
+          return mockInterface;
+        },
+        question(_query: string, callback: (answer: string) => void) {
+          if ("answer" in mode) {
+            callback(mode.answer);
+          }
+        },
+        close() {}
+      };
+      return mockInterface as unknown as ReadlineInterface;
+    });
+  }
+
+  async function runWithPrompt(mode: PromptMock): Promise<void> {
+    const promptSpy = mockPresetPrompt(mode);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      await withInteractiveTerminal(() => runInit());
+      expect(promptSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      logSpy.mockRestore();
+      promptSpy.mockRestore();
+    }
+  }
+
+  it("PRESETS lists the four persona presets", () => {
+    expect([...PRESETS]).toEqual(["solo", "team", "ci", "agent"]);
+    expect(isPresetName("solo")).toBe(true);
+    expect(isPresetName("bogus")).toBe(false);
+  });
+
+  it("solo scaffolds a minimal starter set (hello + first-flow only)", async () => {
+    await runInit(["--preset", "solo"]);
+
+    expect(exists("config.yml")).toBe(true);
+    expect(exists(".gitignore")).toBe(true);
+    expect(exists("hunts", "hello.yml")).toBe(true);
+    expect(exists("hunts", "first-flow.yml")).toBe(true);
+    // solo omits the fuller/default starters
+    expect(exists("hunts", "login-flow.yml")).toBe(false);
+    expect(exists("hunts", "macos-hello.yml")).toBe(false);
+  });
+
+  it("team scaffolds auth, CRUD, and form hunts with guardrails in config", async () => {
+    await runInit(["--preset", "team"]);
+
+    expect(exists("hunts", "login-flow.yml")).toBe(true);
+    expect(exists("hunts", "crud.yml")).toBe(true);
+    expect(exists("hunts", "form.yml")).toBe(true);
+
+    const config = fs.readFileSync(prowlPath("config.yml"), "utf-8");
+    expect(config).toContain("forbiddenSelectors");
+    expect(config).toContain("allowedDomains");
+    expect(config).toContain("maxSteps");
+  });
+
+  it("ci enables JUnit and ships a GitHub Actions workflow template", async () => {
+    await runInit(["--preset", "ci"]);
+
+    const config = fs.readFileSync(prowlPath("config.yml"), "utf-8");
+    expect(config).toContain("junit: true");
+
+    expect(exists("github-workflow.example.yml")).toBe(true);
+    const workflow = fs.readFileSync(prowlPath("github-workflow.example.yml"), "utf-8");
+    expect(workflow).toContain("prowl ci --junit");
+
+    // The workflow must NOT be written outside .prowl/ — scaffold safety.
+    expect(fs.existsSync(path.join(tempDir, ".github"))).toBe(false);
+  });
+
+  it("agent ships an AGENTS.md surface guide and an .env.example", async () => {
+    await runInit(["--preset", "agent"]);
+
+    expect(exists("hunts", "assertions.yml")).toBe(true);
+    expect(exists(".env.example")).toBe(true);
+    expect(exists("AGENTS.md")).toBe(true);
+
+    const agents = fs.readFileSync(prowlPath("AGENTS.md"), "utf-8");
+    expect(agents).toContain("prowl run");
+    expect(agents).toContain("--json");
+    expect(agents).toContain("prowl mcp");
+  });
+
+  it("all presets produce a .gitignore and a config.yml", async () => {
+    for (const preset of PRESETS) {
+      fs.rmSync(path.join(tempDir, ".prowl"), { recursive: true, force: true });
+      await runInit(["--preset", preset]);
+      expect(exists("config.yml")).toBe(true);
+      expect(exists(".gitignore")).toBe(true);
+    }
+  });
+
+  it("every preset config and hunt passes schema validation", async () => {
+    for (const preset of PRESETS) {
+      fs.rmSync(path.join(tempDir, ".prowl"), { recursive: true, force: true });
+      await runInit(["--preset", preset]);
+
+      const { configDir } = loadConfig(prowlPath("config.yml"));
+      const huntFiles = fs.readdirSync(prowlPath("hunts")).filter((f) => f.endsWith(".yml"));
+      expect(huntFiles.length).toBeGreaterThan(0);
+      for (const huntFile of huntFiles) {
+        const hunt = loadHunt(huntFile.replace(/\.yml$/, ""), configDir);
+        expect(hunt.name).toBeTruthy();
+        expect(hunt.steps.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("rejects an unknown preset with exit code 1", async () => {
+    const originalExitCode = process.exitCode;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      process.exitCode = undefined;
+      await runInit(["--preset", "enterprise"]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Unknown preset "enterprise"'));
+      expect(fs.existsSync(path.join(tempDir, ".prowl"))).toBe(false);
+    } finally {
+      process.exitCode = originalExitCode;
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("non-TTY with no --preset falls back to the standard scaffold", async () => {
+    // stdin/stdout are not TTYs under the test runner, so no prompt fires.
+    await runInit();
+
+    // Standard scaffold ships the default four hunts (including macOS starter).
+    expectStandardScaffold();
+  });
+
+  it("CI environments do not prompt even when streams look interactive", async () => {
+    const restoreStdin = setStreamTTY(process.stdin, true);
+    const restoreStdout = setStreamTTY(process.stdout, true);
+    const previousCI = process.env.CI;
+    const promptSpy = vi.spyOn(readline, "createInterface").mockImplementation(() => {
+      throw new Error("prompt should not run in CI");
+    });
+
+    try {
+      process.env.CI = "true";
+      await runInit();
+
+      expect(promptSpy).not.toHaveBeenCalled();
+      expectStandardScaffold();
+    } finally {
+      if (previousCI === undefined) {
+        delete process.env.CI;
+      } else {
+        process.env.CI = previousCI;
+      }
+      promptSpy.mockRestore();
+      restoreStdout();
+      restoreStdin();
+    }
+  });
+
+  it("interactive menu accepts a numeric preset selection", async () => {
+    await runWithPrompt({ answer: "2" });
+
+    expect(exists("hunts", "hello.yml")).toBe(true);
+    expect(exists("hunts", "first-flow.yml")).toBe(true);
+    expect(exists("hunts", "login-flow.yml")).toBe(false);
+    expect(exists("hunts", "macos-hello.yml")).toBe(false);
+  });
+
+  it("interactive menu accepts a direct preset name", async () => {
+    await runWithPrompt({ answer: "team" });
+
+    expect(exists("hunts", "login-flow.yml")).toBe(true);
+    expect(exists("hunts", "crud.yml")).toBe(true);
+    expect(exists("hunts", "form.yml")).toBe(true);
+  });
+
+  it.each(["2abc", "99"])(
+    "interactive menu falls back to standard for invalid input %s",
+    async (answer) => {
+      await runWithPrompt({ answer });
+
+      expectStandardScaffold();
+    }
+  );
+
+  it("interactive menu falls back to standard for empty input", async () => {
+    await runWithPrompt({ answer: "" });
+
+    expectStandardScaffold();
+  });
+
+  it("interactive menu falls back to standard on stdin EOF", async () => {
+    await runWithPrompt({ close: true });
+
+    expectStandardScaffold();
+  });
+
+  it("reports readline failures before force-scaffolding", async () => {
+    await runInit(["--preset", "solo"]);
+    const configPath = prowlPath("config.yml");
+    fs.writeFileSync(configPath, "user config");
+
+    const originalExitCode = process.exitCode;
+    const promptSpy = mockPresetPrompt({ error: new Error("input failed") });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      process.exitCode = undefined;
+      await withInteractiveTerminal(() => runInit(["--force"]));
+
+      expect(process.exitCode).toBe(1);
+      expect(promptSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Could not read preset choice: input failed"));
+      expect(fs.readFileSync(configPath, "utf-8")).toBe("user config");
+      expect(exists("hunts", "first-flow.yml")).toBe(true);
+      expect(exists("hunts", "macos-hello.yml")).toBe(false);
+    } finally {
+      process.exitCode = originalExitCode;
+      errorSpy.mockRestore();
+      logSpy.mockRestore();
+      promptSpy.mockRestore();
+    }
+  });
+
+  it("scaffoldProwlDir() with no preset matches the standard scaffold (doctor --fix path)", () => {
+    scaffoldProwlDir(tempDir);
+
+    // doctor --fix calls scaffoldProwlDir(cwd) with no preset — unchanged set.
+    expect(exists("hunts", "hello.yml")).toBe(true);
+    expect(exists("hunts", "macos-hello.yml")).toBe(true);
+    expect(exists("github-workflow.example.yml")).toBe(false);
+  });
+
+  it("rolls back a partial preset scaffold when destination copying fails", () => {
+    const prowlDir = path.join(tempDir, ".prowl");
+    const copyFileSync = fs.copyFileSync;
+    const copySpy = vi.spyOn(fs, "copyFileSync").mockImplementation((source, destination, mode) => {
+      if (String(destination).startsWith(path.join(prowlDir, "hunts") + path.sep)) {
+        throw new Error("destination copy failed");
+      }
+      copyFileSync(source, destination, mode);
+    });
+
+    try {
+      expect(() => scaffoldProwlDir(tempDir, "ci")).toThrow("destination copy failed");
+      expect(fs.existsSync(prowlDir)).toBe(false);
+    } finally {
+      copySpy.mockRestore();
+    }
+  });
+
+  it("prints preset-specific post-init hints (ci points at the workflow)", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      await runInit(["--preset", "ci"]);
+      const output = logSpy.mock.calls.flat().join("\n");
+      expect(output).toContain("github-workflow.example.yml");
+      expect(output).toContain(".github/workflows/prowl.yml");
+    } finally {
+      logSpy.mockRestore();
     }
   });
 });

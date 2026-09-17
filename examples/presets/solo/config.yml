@@ -1,0 +1,15 @@
+# Prowl Configuration (solo preset)
+# Minimal config to get a side project under test fast.
+# Every option has a sensible default — uncomment only what you need.
+
+# Target application — the base URL for all hunt navigation.
+target:
+  url: "http://localhost:3000"
+
+# Browser settings. Add --headed on the CLI to watch a run.
+browser:
+  headless: true
+
+# Save a screenshot only when a step fails — keeps runs/ small.
+artifacts:
+  screenshots: "on-failure"
