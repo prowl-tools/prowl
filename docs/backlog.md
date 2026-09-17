@@ -50,16 +50,6 @@ agreement, create the Developer ID Application cert, create the App Store Connec
 
 ## Low Priority
 
-{PROWL-003} **P2-008: `prowl ci --fail-fast` Option**
-   Add a `--fail-fast` flag to `prowl ci` that exits on the first hunt failure instead of running all hunts. Useful in CI pipelines where fast feedback is preferred over completeness.
-
-**Found during**: Code review of P2-001 (2026-02-15)
-**Acceptance Criteria**:
-- `prowl ci --fail-fast` stops after first failed hunt
-- Summary still printed for completed + skipped hunts
-- `ci-result.json` reflects partial run
-- Remaining hunts marked as "skipped" in results
-
 {PROWL-004} **P2-009: `prowl ci --output` and `--json` Flags**
    Add `--output <path>` flag to control where `ci-result.json` is written (for CI artifact upload), and `--json` flag for machine-readable stdout output (matching `prowl list --json` pattern).
 

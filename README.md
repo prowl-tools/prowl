@@ -1157,6 +1157,7 @@ prowl list
 prowl ci
 prowl ci --json                        # Machine-readable CI output
 prowl ci --parallel 4                 # Run hunts with 4 workers
+prowl ci --fail-fast                   # Stop after the first hunt failure
 
 # History — show past runs of a hunt
 prowl history <hunt-name>
@@ -1172,6 +1173,21 @@ prowl mcp --projects ~/.prowl/projects.yml   # Drive multiple repos via a regist
 - Runs hunts in parallel with `count` workers.
 - Must be a positive integer (`>= 1`).
 - Invalid values (for example `0` or `1.5`) fail fast with an argument error.
+
+`--fail-fast` details:
+- Stops starting new hunts after the first hunt that fails, for faster feedback
+  in CI pipelines.
+- A hunt only counts as failed once its configured `retry` attempts are
+  exhausted — a hunt that recovers on retry is a pass and does not trip
+  fail-fast.
+- Sequential runs stop launching hunts immediately. With `--parallel`, hunts
+  already in flight run to completion and report their real results; only hunts
+  that had not started yet are skipped (in-flight work is never killed).
+- Hunts that never start are recorded as `skipped` with `skipReason: "fail-fast"`
+  in `ci-result.json` and `--json` output — distinct from tag-filter skips — and
+  shown as skipped in the CI summary.
+- The exit code is unchanged: a run with a failure still exits `1`. Fail-fast
+  skips never turn a failed run into an all-skipped (`exit 2`) one.
 
 ### Environment Check (`prowl doctor`)
 

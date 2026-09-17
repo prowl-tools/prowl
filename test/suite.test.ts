@@ -64,15 +64,34 @@ describe("runSuite", () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-suite-test-"));
     mockLoadConfig.mockReturnValue({ config: {}, configDir: tmpDir });
     mockRunWithConcurrency.mockImplementation(
-      async (tasks: Array<() => Promise<unknown>>) => {
-        const results: Array<{ status: "fulfilled"; value: unknown } | { status: "rejected"; reason: unknown }> = [];
-        for (const task of tasks) {
-          try {
-            results.push({ status: "fulfilled", value: await task() });
-          } catch (reason) {
-            results.push({ status: "rejected", reason });
+      async (
+        tasks: Array<() => Promise<unknown>>,
+        concurrency: number,
+        options?: { shouldStop?: () => boolean }
+      ) => {
+        // Mirror the real worker-pool: honor shouldStop and leave holes for
+        // tasks that are never started so fail-fast bail can be exercised.
+        const normalized = Number.isFinite(concurrency) && concurrency > 0 ? Math.floor(concurrency) : 1;
+        const results: Array<
+          { status: "fulfilled"; value: unknown } | { status: "rejected"; reason: unknown } | undefined
+        > =
+          new Array(tasks.length);
+        let nextIndex = 0;
+        async function worker() {
+          while (nextIndex < tasks.length) {
+            if (options?.shouldStop?.()) return;
+            const index = nextIndex;
+            nextIndex += 1;
+            try {
+              results[index] = { status: "fulfilled", value: await tasks[index]() };
+            } catch (reason) {
+              results[index] = { status: "rejected", reason };
+            }
           }
         }
+        await Promise.all(
+          Array.from({ length: Math.min(normalized, tasks.length) }, () => worker())
+        );
         return results;
       }
     );
@@ -334,6 +353,154 @@ describe("runSuite", () => {
     const step = { navigate: "/" };
     runOptions.onStep?.(stepResult, step, 0);
     expect(onStep).toHaveBeenCalledWith(stepResult, step, 0);
+  });
+
+  describe("fail-fast", () => {
+    it("stops starting hunts after the first failure and marks the rest skipped (sequential)", async () => {
+      mockListHunts.mockReturnValue(["a", "b", "c", "d"]);
+      mockRunHunt
+        .mockResolvedValueOnce(makeRunResult("a", "pass"))
+        .mockResolvedValueOnce(makeFailedRunResult("b", "boom"));
+
+      const skipped: Array<{ hunt: string; reason: string }> = [];
+      const { result, resultPath } = await runSuite({
+        failFast: true,
+        hooks: { onHuntSkipped: (hunt, reason) => skipped.push({ hunt, reason }) }
+      });
+
+      // Only a and b ever run; c and d are never started.
+      expect(mockRunHunt).toHaveBeenCalledTimes(2);
+      expect(result.status).toBe("fail");
+      expect(result.failed).toBe(1);
+      expect(result.passed).toBe(1);
+      expect(result.skipped).toBe(2);
+      expect(result.hunts.map((h) => ({ hunt: h.hunt, status: h.status, skipReason: h.skipReason }))).toEqual([
+        { hunt: "a", status: "pass", skipReason: undefined },
+        { hunt: "b", status: "fail", skipReason: undefined },
+        { hunt: "c", status: "skipped", skipReason: "fail-fast" },
+        { hunt: "d", status: "skipped", skipReason: "fail-fast" }
+      ]);
+      expect(skipped).toEqual([
+        { hunt: "c", reason: "fail-fast" },
+        { hunt: "d", reason: "fail-fast" }
+      ]);
+      // Partial run is persisted honestly.
+      const onDisk: CiResult = JSON.parse(fs.readFileSync(resultPath!, "utf-8"));
+      expect(onDisk.status).toBe("fail");
+      expect(onDisk.hunts[2]).toMatchObject({ hunt: "c", status: "skipped", skipReason: "fail-fast" });
+    });
+
+    it("runs the whole suite when fail-fast is off (baseline)", async () => {
+      mockListHunts.mockReturnValue(["a", "b", "c"]);
+      mockRunHunt
+        .mockResolvedValueOnce(makeRunResult("a", "pass"))
+        .mockResolvedValueOnce(makeFailedRunResult("b", "boom"))
+        .mockResolvedValueOnce(makeRunResult("c", "pass"));
+
+      const { result } = await runSuite({});
+
+      expect(mockRunHunt).toHaveBeenCalledTimes(3);
+      expect(result.failed).toBe(1);
+      expect(result.skipped).toBe(0);
+    });
+
+    it("treats a retry-then-pass hunt as a pass and does not trigger fail-fast", async () => {
+      mockListHunts.mockReturnValue(["a", "b", "c"]);
+      // runHunt already applies retries internally; a recovered hunt reports pass.
+      mockRunHunt
+        .mockResolvedValueOnce(makeRunResult("a", "pass"))
+        .mockResolvedValueOnce(makeRunResult("b", "pass"))
+        .mockResolvedValueOnce(makeRunResult("c", "pass"));
+
+      const { result } = await runSuite({ failFast: true });
+
+      expect(mockRunHunt).toHaveBeenCalledTimes(3);
+      expect(result.status).toBe("pass");
+      expect(result.skipped).toBe(0);
+    });
+
+    it("distinguishes tag-filter skips from fail-fast skips", async () => {
+      mockListHunts.mockReturnValue(["excluded", "a", "b", "c"]);
+      mockLoadHuntTags
+        .mockReturnValueOnce(["slow"]) // excluded
+        .mockReturnValueOnce(["smoke"]) // a
+        .mockReturnValueOnce(["smoke"]) // b
+        .mockReturnValueOnce(["smoke"]); // c
+      mockRunHunt
+        .mockResolvedValueOnce(makeRunResult("a", "pass"))
+        .mockResolvedValueOnce(makeFailedRunResult("b", "boom"));
+
+      const { result } = await runSuite({ excludeTags: ["slow"], failFast: true });
+
+      expect(result.hunts.map((h) => ({ hunt: h.hunt, status: h.status, skipReason: h.skipReason }))).toEqual([
+        { hunt: "excluded", status: "skipped", skipReason: "exclude" },
+        { hunt: "a", status: "pass", skipReason: undefined },
+        { hunt: "b", status: "fail", skipReason: undefined },
+        { hunt: "c", status: "skipped", skipReason: "fail-fast" }
+      ]);
+    });
+
+    it("bails in parallel mode: in-flight hunts finish, later hunts are skipped", async () => {
+      mockListHunts.mockReturnValue(["a", "b", "c", "d"]);
+      // a fails immediately; b is a slower in-flight pass. With parallel=2 the
+      // pool starts a and b; a's failure trips the bail before c/d are scheduled.
+      mockRunHunt.mockImplementation(async (options: { huntName: string }) => {
+        if (options.huntName === "a") return makeFailedRunResult("a", "boom");
+        if (options.huntName === "b") {
+          await new Promise((r) => setTimeout(r, 20));
+          return makeRunResult("b", "pass");
+        }
+        return makeRunResult(options.huntName, "pass");
+      });
+
+      const { result } = await runSuite({ parallel: 2, failFast: true });
+
+      const ran = mockRunHunt.mock.calls.map((c) => (c[0] as { huntName: string }).huntName).sort();
+      expect(ran).toEqual(["a", "b"]);
+      expect(result.hunts.map((h) => ({ hunt: h.hunt, status: h.status, skipReason: h.skipReason }))).toEqual([
+        { hunt: "a", status: "fail", skipReason: undefined },
+        { hunt: "b", status: "pass", skipReason: undefined },
+        { hunt: "c", status: "skipped", skipReason: "fail-fast" },
+        { hunt: "d", status: "skipped", skipReason: "fail-fast" }
+      ]);
+      expect(result.status).toBe("fail");
+    });
+
+    it("bails in parallel mode when a hunt task rejects", async () => {
+      mockListHunts.mockReturnValue(["a", "b", "c"]);
+      mockRunHunt.mockImplementation(async (options: { huntName: string }) => {
+        if (options.huntName === "a") throw new Error("original failure");
+        if (options.huntName === "b") {
+          await new Promise((r) => setTimeout(r, 20));
+          return makeRunResult("b", "pass");
+        }
+        return makeRunResult(options.huntName, "pass");
+      });
+      // Force an unexpected task-level rejection after a and b have both started.
+      let nowCalls = 0;
+      vi.spyOn(Date, "now").mockImplementation(() => {
+        nowCalls++;
+        if (nowCalls === 4) throw new Error("clock failed");
+        return 1000 + nowCalls;
+      });
+
+      const { result } = await runSuite({ parallel: 2, failFast: true });
+
+      const ran = mockRunHunt.mock.calls.map((c) => (c[0] as { huntName: string }).huntName).sort();
+      expect(ran).toEqual(["a", "b"]);
+      const huntSummaries = result.hunts.map((h) => ({
+        hunt: h.hunt,
+        status: h.status,
+        skipReason: h.skipReason,
+        error: h.error
+      }));
+      expect(huntSummaries).toEqual([
+        { hunt: "a", status: "fail", skipReason: undefined, error: "clock failed" },
+        { hunt: "b", status: "pass", skipReason: undefined, error: undefined },
+        { hunt: "c", status: "skipped", skipReason: "fail-fast", error: undefined }
+      ]);
+      expect(result.status).toBe("fail");
+    });
   });
 
   it("emits no console output of its own", async () => {
