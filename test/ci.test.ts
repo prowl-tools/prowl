@@ -74,7 +74,11 @@ describe("ci command", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRunWithConcurrency.mockImplementation(
-      async (tasks: Array<() => Promise<unknown>>, concurrency: number) => {
+      async (
+        tasks: Array<() => Promise<unknown>>,
+        concurrency: number,
+        options?: { shouldStop?: () => boolean }
+      ) => {
         const normalizedConcurrency =
           Number.isFinite(concurrency) && concurrency > 0
             ? Math.floor(concurrency)
@@ -85,6 +89,7 @@ describe("ci command", () => {
 
         async function worker() {
           while (nextIndex < tasks.length) {
+            if (options?.shouldStop?.()) return;
             const index = nextIndex;
             nextIndex += 1;
             try {
@@ -139,6 +144,79 @@ describe("ci command", () => {
     await cmd.parseAsync(["node", "prowl"]);
 
     expect(mockRunHunt).toHaveBeenCalledTimes(2);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("--fail-fast stops after the first failure and exits 1 (sequential)", async () => {
+    mockLoadConfig.mockReturnValue({ config: {}, configDir: "/tmp/.prowl" });
+    mockListHunts.mockReturnValue(["homepage", "checkout", "profile"]);
+    mockRunHunt
+      .mockResolvedValueOnce(makeRunResult("homepage", "pass"))
+      .mockResolvedValueOnce(makeFailedRunResult("checkout", "button not visible"));
+
+    const cmd = buildCiCommand();
+    await cmd.parseAsync(["node", "prowl", "--fail-fast"]);
+
+    // profile is never started.
+    expect(mockRunHunt).toHaveBeenCalledTimes(2);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("--fail-fast marks remaining hunts as fail-fast skips in --json output", async () => {
+    mockLoadConfig.mockReturnValue({ config: {}, configDir: "/tmp/.prowl" });
+    mockListHunts.mockReturnValue(["homepage", "checkout", "profile"]);
+    mockRunHunt
+      .mockResolvedValueOnce(makeRunResult("homepage", "pass"))
+      .mockResolvedValueOnce(makeFailedRunResult("checkout", "button not visible"));
+
+    const cmd = buildCiCommand();
+    await cmd.parseAsync(["node", "prowl", "--fail-fast", "--json"]);
+
+    const jsonCall = logSpy.mock.calls.find((call) => {
+      try { JSON.parse(call[0] as string); return true; } catch { return false; }
+    });
+    expect(jsonCall).toBeDefined();
+    const parsed: CiResult = JSON.parse(jsonCall![0] as string);
+    expect(parsed.status).toBe("fail");
+    expect(parsed.totalHunts).toBe(3);
+    expect(parsed.passed).toBe(1);
+    expect(parsed.failed).toBe(1);
+    expect(parsed.skipped).toBe(1);
+    expect(parsed.hunts[2]).toMatchObject({ hunt: "profile", status: "skipped", skipReason: "fail-fast" });
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("--fail-fast persists a partial run to ci-result.json", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-ff-ci-"));
+    mockLoadConfig.mockReturnValue({ config: {}, configDir: tmpDir });
+    mockListHunts.mockReturnValue(["homepage", "checkout", "profile"]);
+    mockRunHunt
+      .mockResolvedValueOnce(makeRunResult("homepage", "pass"))
+      .mockResolvedValueOnce(makeFailedRunResult("checkout", "button not visible"));
+
+    const cmd = buildCiCommand();
+    await cmd.parseAsync(["node", "prowl", "--fail-fast", "--json"]);
+
+    const runsDir = path.join(tmpDir, "runs");
+    const ciDir = fs.readdirSync(runsDir).find((d) => d.startsWith("ci"));
+    const onDisk: CiResult = JSON.parse(fs.readFileSync(path.join(runsDir, ciDir!, "ci-result.json"), "utf-8"));
+    expect(onDisk.status).toBe("fail");
+    expect(onDisk.hunts.map((h) => h.status)).toEqual(["pass", "fail", "skipped"]);
+    expect(onDisk.hunts[2]).toMatchObject({ hunt: "profile", skipReason: "fail-fast" });
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("--fail-fast does not flip a failure to all-skipped (exit 1, not 2)", async () => {
+    mockLoadConfig.mockReturnValue({ config: {}, configDir: "/tmp/.prowl" });
+    mockListHunts.mockReturnValue(["checkout", "profile", "settings"]);
+    mockRunHunt.mockResolvedValueOnce(makeFailedRunResult("checkout", "boom"));
+
+    const cmd = buildCiCommand();
+    await cmd.parseAsync(["node", "prowl", "--fail-fast"]);
+
+    // Even though most hunts end up skipped, the run failed -> exit 1.
+    expect(mockRunHunt).toHaveBeenCalledTimes(1);
     expect(process.exitCode).toBe(1);
   });
 

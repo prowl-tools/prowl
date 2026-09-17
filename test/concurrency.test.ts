@@ -74,6 +74,42 @@ describe("runWithConcurrency", () => {
     expect(results).toEqual([]);
   });
 
+  it("stops starting new tasks once shouldStop trips, leaving unstarted holes", async () => {
+    const started: number[] = [];
+    let stop = false;
+    const tasks = [0, 1, 2, 3, 4].map((i) => async () => {
+      started.push(i);
+      // Trip the bail after the first task runs.
+      if (i === 0) stop = true;
+      return i;
+    });
+
+    const results = await runWithConcurrency(tasks, 1, { shouldStop: () => stop });
+
+    // With concurrency=1 and bail after task 0, no further tasks start.
+    expect(started).toEqual([0]);
+    expect(results[0]).toEqual({ status: "fulfilled", value: 0 });
+    expect(results[1]).toBeUndefined();
+    expect(results[4]).toBeUndefined();
+  });
+
+  it("lets in-flight tasks finish when shouldStop trips mid-flight", async () => {
+    const finished: number[] = [];
+    let stop = false;
+    const tasks = [
+      async () => { await new Promise((r) => setTimeout(r, 10)); stop = true; finished.push(0); return 0; },
+      async () => { await new Promise((r) => setTimeout(r, 20)); finished.push(1); return 1; },
+      async () => { finished.push(2); return 2; }
+    ];
+
+    const results = await runWithConcurrency(tasks, 2, { shouldStop: () => stop });
+
+    // Tasks 0 and 1 start together (concurrency 2); task 0 trips the bail before
+    // either worker frees up, so task 2 never starts.
+    expect(finished.sort()).toEqual([0, 1]);
+    expect(results[2]).toBeUndefined();
+  });
+
   it("normalizes non-positive concurrency to 1", async () => {
     const order: number[] = [];
     const tasks = [0, 1, 2].map((i) => async () => {
