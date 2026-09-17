@@ -14,6 +14,7 @@ function mockPage(locatorCounts: Record<string, number>) {
       count: vi.fn(async () => count),
       first: vi.fn(() => locator),
       click: vi.fn(async () => undefined),
+      dblclick: vi.fn(async () => undefined),
       fill: vi.fn(async () => undefined),
       press: vi.fn(async () => undefined),
       selectOption: vi.fn(async () => undefined),
@@ -99,6 +100,38 @@ describe("self-healing wiring", () => {
 
     expect(result.results[0]).toMatchObject({ selector: "#sign-in" });
     expect(result.results[0].healedFrom).toBeUndefined();
+  });
+
+  it("heals a doubleClick selector like click (PROWL-019)", async () => {
+    const page = mockPage({ "#cell": 0, "text=cell": 1 });
+    const steps: Step[] = [{ doubleClick: { selector: "#cell" } }];
+
+    const result = await executeSteps(baseContext(page, steps, runDir, { selfHealing: true }));
+
+    expect(result.failed).toBe(false);
+    expect(result.results[0]).toMatchObject({
+      type: "doubleClick",
+      status: "pass",
+      selector: "text=cell",
+      healedFrom: "#cell"
+    });
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Self-healed selector"));
+  });
+
+  it("heals a rightClick selector like click (PROWL-019)", async () => {
+    const page = mockPage({ "#node": 0, "text=node": 1 });
+    const steps: Step[] = [{ rightClick: { selector: "#node" } }];
+
+    const result = await executeSteps(baseContext(page, steps, runDir, { selfHealing: true }));
+
+    expect(result.failed).toBe(false);
+    expect(result.results[0]).toMatchObject({
+      type: "rightClick",
+      status: "pass",
+      selector: "text=node",
+      healedFrom: "#node"
+    });
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Self-healed selector"));
   });
 
   it("heals a hover selector too", async () => {
