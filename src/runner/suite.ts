@@ -4,12 +4,12 @@ import { loadConfig, listHunts, loadHuntTags } from "../config/loader.js";
 import { writeCiResult, resolveCiStatus, countCiResults } from "../reporter/ci-summary.js";
 import { timestamp } from "../utils/timestamp.js";
 import { runWithConcurrency } from "../utils/concurrency.js";
-import type { CiFailureCluster, CiFlakyHunt, CiHuntResult, CiResult, RunResult } from "../types/index.js";
+import type { CiFailureCluster, CiFlakyHunt, CiHuntResult, CiResult, CiSkipReason, RunResult } from "../types/index.js";
 import { rankFlaky, DEFAULT_FLAKY_THRESHOLD } from "./flaky.js";
 import { clusterFailures } from "./clustering.js";
 import { extractFailures } from "../backlog/index.js";
 
-export type SkipReason = "include" | "exclude";
+export type SkipReason = CiSkipReason;
 type SuiteHookResult = void | Promise<void>;
 
 export interface RunSuiteHooks {
@@ -33,6 +33,14 @@ export interface RunSuiteOptions {
   includeTags?: string[];
   excludeTags?: string[];
   parallel?: number;
+  /**
+   * Stop starting new hunts after the first definitive failure (a hunt that
+   * fails after any configured retries are exhausted). In sequential mode no
+   * further hunts start; in parallel mode already-in-flight hunts run to
+   * completion but no new ones are scheduled. Hunts that never start are
+   * recorded as skipped with reason "fail-fast".
+   */
+  failFast?: boolean;
   hooks?: RunSuiteHooks;
 }
 
@@ -118,12 +126,12 @@ export async function runSuite(options: RunSuiteOptions = {}): Promise<RunSuiteR
 
       if (includeTags && !includeTags.some((t) => tags.includes(t))) {
         await callHook(() => hooks.onHuntSkipped?.(huntName, "include"));
-        resultsByIndex[index] = { hunt: huntName, status: "skipped", durationMs: 0 };
+        resultsByIndex[index] = { hunt: huntName, status: "skipped", durationMs: 0, skipReason: "include" };
         continue;
       }
       if (excludeTags && excludeTags.some((t) => tags.includes(t))) {
         await callHook(() => hooks.onHuntSkipped?.(huntName, "exclude"));
-        resultsByIndex[index] = { hunt: huntName, status: "skipped", durationMs: 0 };
+        resultsByIndex[index] = { hunt: huntName, status: "skipped", durationMs: 0, skipReason: "exclude" };
         continue;
       }
     }
@@ -178,17 +186,38 @@ export async function runSuite(options: RunSuiteOptions = {}): Promise<RunSuiteR
   };
 
   // Phase 3: Execute (parallel when requested, otherwise sequential in hunt order)
+  const failFast = options.failFast === true;
+  const failFastSkip = async (huntName: string): Promise<CiHuntResult> => {
+    await callHook(() => hooks.onHuntSkipped?.(huntName, "fail-fast"));
+    return { hunt: huntName, status: "skipped", durationMs: 0, skipReason: "fail-fast" };
+  };
+
   const parallel = options.parallel;
   if (parallel !== undefined && parallel > 1) {
-    const tasks = huntsToRun.map((entry) => ({ ...entry, task: buildTask(entry.huntName) }));
+    // Standard bail semantics: after the first definitive failure, stop
+    // scheduling new hunts but let already-in-flight hunts finish. Tasks never
+    // started come back as holes and are recorded as fail-fast skips below.
+    let bail = false;
+    const tasks = huntsToRun.map((entry) => ({
+      ...entry,
+      task: async (): Promise<CiHuntResult> => {
+        const result = await buildTask(entry.huntName)();
+        if (failFast && result.status === "fail") bail = true;
+        return result;
+      }
+    }));
     const parallelResults = await runWithConcurrency(
       tasks.map((entry) => entry.task),
-      parallel
+      parallel,
+      failFast ? { shouldStop: () => bail } : {}
     );
-    for (let i = 0; i < parallelResults.length; i++) {
+    for (let i = 0; i < tasks.length; i++) {
       const pr = parallelResults[i];
       const task = tasks[i];
-      if (pr.status === "fulfilled") {
+      if (pr === undefined) {
+        // Never started because fail-fast bailed out.
+        resultsByIndex[task.index] = await failFastSkip(task.huntName);
+      } else if (pr.status === "fulfilled") {
         resultsByIndex[task.index] = pr.value;
       } else {
         const message = pr.reason instanceof Error ? pr.reason.message : "Run failed";
@@ -201,8 +230,15 @@ export async function runSuite(options: RunSuiteOptions = {}): Promise<RunSuiteR
       }
     }
   } else {
+    let bail = false;
     for (const { huntName, index } of huntsToRun) {
-      resultsByIndex[index] = await buildTask(huntName)();
+      if (bail) {
+        resultsByIndex[index] = await failFastSkip(huntName);
+        continue;
+      }
+      const result = await buildTask(huntName)();
+      resultsByIndex[index] = result;
+      if (failFast && result.status === "fail") bail = true;
     }
   }
 
