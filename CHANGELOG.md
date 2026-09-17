@@ -5,6 +5,16 @@ All notable changes to Prowl will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **`prowl ci --fail-fast` (PROWL-003).** Stop starting new hunts after the first
+  hunt failure for faster feedback in CI pipelines. A hunt only counts as failed
+  once its configured `retry` attempts are exhausted, so a hunt that recovers on
+  retry does not trip fail-fast. Sequential runs stop launching hunts immediately;
+  with `--parallel`, hunts already in flight finish and report real results while
+  only not-yet-started hunts are skipped (in-flight work is never killed). Skipped
+  hunts are recorded as `skipped` with `skipReason: "fail-fast"` in `ci-result.json`
+  and `--json` output — distinct from tag-filter skips — and shown in the CI
+  summary. Exit-code semantics are unchanged: a failed run still exits `1` and
+  fail-fast skips never turn it into an all-skipped (`exit 2`) run.
 - **Persona-specific onboarding presets (PROWL-029).** `prowl init --preset <name>`
   scaffolds a starter set tailored to how you work: `solo` (a lean config and two
   simple hunts for a quick start), `team` (full guardrails plus auth/CRUD/form
