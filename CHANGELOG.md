@@ -5,6 +5,16 @@ All notable changes to Prowl will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **`doubleClick` and `rightClick` step types (PROWL-019).** Two web-specific
+  pointer steps for interactions the plain `click` can't express — double-click to
+  select text or open an inline editor (`doubleClick`, Playwright `dblclick()`),
+  and right/secondary click to open a context menu (`rightClick`, Playwright
+  `click({ button: "right" })`). Both mirror `click`'s `string | { selector }`
+  shape, so the shorthand form resolves by button role then text just like `click`,
+  and the explicit `{ selector }` form participates in self-healing and
+  forbidden-selector guardrails identically. They are **web-only**: on the macOS,
+  iOS, and Android targets a hunt using either is rejected up front with the
+  standard clear web-only message.
 - **`prowl ci --fail-fast` (PROWL-003).** Stop starting new hunts after the first
   hunt failure for faster feedback in CI pipelines. A hunt only counts as failed
   once its configured `retry` attempts are exhausted, so a hunt that recovers on
