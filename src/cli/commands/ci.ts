@@ -40,6 +40,7 @@ export function buildCiCommand(): Command {
     .option("--junit", "Generate JUnit XML reports")
     .option("--include-tags <tags>", "Only run hunts matching these tags (comma-separated)")
     .option("--exclude-tags <tags>", "Skip hunts matching these tags (comma-separated)")
+    .option("--fail-fast", "Stop starting new hunts after the first failure (remaining hunts are skipped)")
     .option("--json", "Output results as JSON")
     .option("--parallel <count>", "Run hunts in parallel with N workers", (value) => {
       const n = Number(value);
@@ -72,6 +73,7 @@ export function buildCiCommand(): Command {
         includeTags,
         excludeTags,
         parallel,
+        failFast: Boolean(options.failFast),
         hooks: {
           onHuntStart: showProgress ? (huntName) => printHuntHeader(huntName) : undefined,
           onStep: showProgress
@@ -92,7 +94,12 @@ export function buildCiCommand(): Command {
           onHuntSkipped: options.json
             ? undefined
             : (huntName, reason) => {
-                const why = reason === "include" ? "no matching include tags" : "matched exclude tags";
+                const why =
+                  reason === "include"
+                    ? "no matching include tags"
+                    : reason === "exclude"
+                      ? "matched exclude tags"
+                      : "fail-fast: an earlier hunt failed";
                 console.log(chalk.yellow(`  ○ Skipped "${huntName}" — ${why}`));
               }
         }

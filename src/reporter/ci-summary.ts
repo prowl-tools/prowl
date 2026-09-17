@@ -39,7 +39,12 @@ export function printCiSummary(
   for (const r of results) {
     const icon = r.status === "pass" ? chalk.green("✓") : r.status === "fail" ? chalk.red("✗") : chalk.yellow("○");
     const name = r.status === "fail" ? chalk.red(r.hunt) : r.status === "skipped" ? chalk.yellow(r.hunt) : r.hunt;
-    const duration = r.status === "skipped" ? "" : chalk.gray(`(${r.durationMs}ms)`);
+    const duration =
+      r.status === "skipped"
+        ? r.skipReason === "fail-fast"
+          ? chalk.gray("(skipped: fail-fast)")
+          : ""
+        : chalk.gray(`(${r.durationMs}ms)`);
     const pad = " ".repeat(Math.max(1, 40 - r.hunt.length));
     console.log(`  ${icon} ${name}${pad}${duration}`);
   }
