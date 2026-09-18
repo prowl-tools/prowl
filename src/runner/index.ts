@@ -801,6 +801,14 @@ async function runNativeHunt<TTarget extends NativeRunTarget>(
     );
   }
 
+  // Same honest degradation for browser.geolocation (PROWL-018): a context-level
+  // Playwright capability with no native analog.
+  if (config.browser.geolocation) {
+    console.warn(
+      `Geolocation simulation is not supported on ${native.targetType} targets (web only); continuing without it.`
+    );
+  }
+
   const maxSteps = config.guardrails.maxSteps;
   if (interpolatedHunt.steps.length > maxSteps) {
     throw new Error(`Hunt has ${interpolatedHunt.steps.length} steps. Max allowed is ${maxSteps}.`);
