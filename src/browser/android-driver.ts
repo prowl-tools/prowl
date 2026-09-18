@@ -371,6 +371,11 @@ export function createAndroidDriver(
     setInputFiles(): Promise<void> {
       return rejectUnsupported("setInputFiles");
     },
+    // setGeolocation is web-only (PROWL-018); rejected before launch by the
+    // per-target step gate, stubbed here to satisfy the interface.
+    setGeolocation(): Promise<void> {
+      return rejectUnsupported("setGeolocation");
+    },
 
     // semantic locators ----------------------------------------------------
     async countByRole(role: string, name: string): Promise<number> {
