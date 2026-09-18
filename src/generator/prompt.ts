@@ -25,6 +25,7 @@ const STEP_REFERENCE = `
 - selectOption: { selector: "select", value: "option" }
 - select: { "Label": "value" } — select by label
 - setInputFiles: { selector: "#file", files: "path.png" }
+- setGeolocation: { latitude: 37.7749, longitude: -122.4194 } — simulate a location (web only)
 - onDialog: { action: "accept" } — handle browser dialogs
 
 ### Assertions
