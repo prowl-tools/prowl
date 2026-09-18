@@ -521,12 +521,15 @@ describe("createPlaywrightDriver", () => {
 
     await driver.dblclickFirst("#cell");
     expect(locator.first).toHaveBeenCalled();
+    expect(dblclick).toHaveBeenCalledTimes(2);
+    expect(dblclick).toHaveBeenLastCalledWith();
 
     await driver.rightClick("#node");
     expect(click).toHaveBeenLastCalledWith({ button: "right" });
 
     await driver.rightClickFirst("#node");
     expect(click).toHaveBeenLastCalledWith({ button: "right" });
+    expect(click).toHaveBeenCalledTimes(2);
   });
 
   it("maps role-based doubleClick/rightClick through getByRole (PROWL-019)", async () => {

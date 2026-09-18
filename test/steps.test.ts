@@ -407,6 +407,38 @@ describe("executeSteps", () => {
     expect(textFirst).toHaveBeenCalledWith('text="File"');
   });
 
+  it("substitutes runtime vars for doubleClick/rightClick string and selector forms", async () => {
+    const countByRole = vi.fn(async () => 1);
+    const dblclickFirstByRole = vi.fn(async () => undefined);
+    const rightClickFirstByRole = vi.fn(async () => undefined);
+    const dblclick = vi.fn(async () => undefined);
+    const driver = pointerDriver({ countByRole, dblclickFirstByRole, rightClickFirstByRole, dblclick });
+    const result = await runPointerStep(
+      driver,
+      [
+        { doubleClick: "{{LABEL}}" },
+        { rightClick: "{{LABEL}}" },
+        { doubleClick: { selector: "{{CELL_SELECTOR}}" } }
+      ],
+      {
+        runtimeVars: new Map([
+          ["LABEL", "Rename"],
+          ["CELL_SELECTOR", "#cell"]
+        ])
+      }
+    );
+
+    expect(result.failed).toBe(false);
+    expect(countByRole).toHaveBeenNthCalledWith(1, "button", "Rename");
+    expect(countByRole).toHaveBeenNthCalledWith(2, "button", "Rename");
+    expect(dblclickFirstByRole).toHaveBeenCalledWith("button", "Rename");
+    expect(rightClickFirstByRole).toHaveBeenCalledWith("button", "Rename");
+    expect(dblclick).toHaveBeenCalledWith("#cell");
+    expect(result.results[0]).toMatchObject({ type: "doubleClick", selector: 'role=button[name="Rename"]' });
+    expect(result.results[1]).toMatchObject({ type: "rightClick", selector: 'role=button[name="Rename"]' });
+    expect(result.results[2]).toMatchObject({ type: "doubleClick", selector: "#cell" });
+  });
+
   it("rejects a forbidden selector for doubleClick (object form)", async () => {
     const dblclick = vi.fn(async () => undefined);
     const driver = pointerDriver({ dblclick });
