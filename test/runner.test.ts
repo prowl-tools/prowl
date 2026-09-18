@@ -60,7 +60,14 @@ import { runHunt } from "../src/runner/index.js";
 function defaultConfig() {
   return {
     target: { url: "http://localhost:3000" },
-    browser: { headless: true, slowMo: 0, timeout: 30000, engine: "chromium", viewport: { width: 1280, height: 720 } },
+    browser: {
+      headless: true,
+      slowMo: 0,
+      timeout: 30000,
+      engine: "chromium",
+      viewport: { width: 1280, height: 720 },
+      geolocation: undefined as { latitude: number; longitude: number } | undefined
+    },
     artifacts: { screenshots: "on-failure", networkHar: false, console: true, junit: false, video: false },
     assertions: { noConsoleErrors: true, noNetworkErrors: true, maxTotalTimeMs: 30000, networkIgnorePatterns: [] },
     guardrails: { maxSteps: 50, allowedDomains: ["localhost"], forbiddenSelectors: [] },
@@ -256,6 +263,19 @@ describe("runHunt", () => {
 
     expect(mockLaunchBrowser).toHaveBeenCalledWith(
       expect.objectContaining({ engine: "firefox" })
+    );
+  });
+
+  it("passes config geolocation to launchBrowser (PROWL-018)", async () => {
+    const { config } = setupMocks();
+    config.browser.geolocation = { latitude: 34.0522, longitude: -118.2437 };
+
+    await runHunt({ huntName: "test-hunt" });
+
+    expect(mockLaunchBrowser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        geolocation: { latitude: 34.0522, longitude: -118.2437 }
+      })
     );
   });
 
