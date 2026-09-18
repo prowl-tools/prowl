@@ -86,6 +86,7 @@ function getStepType(step: Step): string {
   if ("rightClick" in step) return "rightClick";
   if ("fill" in step) return "fill";
   if ("type" in step) return "type";
+  if ("setGeolocation" in step) return "setGeolocation";
   if ("selectOption" in step) return "selectOption";
   if ("select" in step) return "select";
   if ("onDialog" in step) return "onDialog";
@@ -833,6 +834,26 @@ const STEP_HANDLERS: Record<string, StepHandler> = {
           durationMs: Date.now() - h.stepStart,
           selector,
           value
+        }
+      };
+    }
+  },
+
+  setGeolocation: {
+    capabilities: ["interact"],
+    run: async (h) => {
+      if (!("setGeolocation" in h.step)) unknownStep();
+      const { latitude, longitude } = h.step.setGeolocation;
+      // Context-level op: the driver grants the `geolocation` permission before
+      // setting coordinates, so this works even without a config-level pre-grant.
+      await h.driver.setGeolocation(latitude, longitude);
+      return {
+        kind: "result",
+        result: {
+          type: "setGeolocation",
+          status: "pass",
+          durationMs: Date.now() - h.stepStart,
+          value: `${latitude},${longitude}`
         }
       };
     }

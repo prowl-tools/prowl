@@ -189,7 +189,8 @@ async function executeHuntAttempt(
     runDir,
     engine,
     channel,
-    viewport
+    viewport,
+    ...(config.browser.geolocation ? { geolocation: config.browser.geolocation } : {})
   });
 
   let result: RunResult;
