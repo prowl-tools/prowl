@@ -22,7 +22,7 @@ import {
   type Page,
   type Video
 } from "playwright";
-import type { BrowserChannel, BrowserEngine, Viewport } from "../types/index.js";
+import type { BrowserChannel, BrowserEngine, Geolocation, Viewport } from "../types/index.js";
 import type {
   DialogAction,
   DriverCapability,
@@ -61,6 +61,8 @@ export type BrowserOptions = {
   engine?: BrowserEngine;
   channel?: BrowserChannel;
   viewport?: Viewport;
+  /** Geolocation to simulate for the whole run (PROWL-018); applied at context creation. */
+  geolocation?: Geolocation;
 };
 
 export async function launchBrowser(options: BrowserOptions): Promise<BrowserSession> {
@@ -102,6 +104,16 @@ export async function launchBrowser(options: BrowserOptions): Promise<BrowserSes
     // one WebM per page into `dir`, finalized only when the context closes.
     if (options.recordVideo) {
       contextOptions.recordVideo = { dir: options.runDir };
+    }
+
+    // Geolocation (PROWL-018) is also a context option: set the coordinates and grant
+    // the `geolocation` permission so the page can read position.coords without a prompt.
+    if (options.geolocation) {
+      contextOptions.geolocation = {
+        latitude: options.geolocation.latitude,
+        longitude: options.geolocation.longitude
+      };
+      contextOptions.permissions = [...(contextOptions.permissions ?? []), "geolocation"];
     }
 
     const context = await browser.newContext(contextOptions);
@@ -305,6 +317,21 @@ export function createPlaywrightDriver(page: Page): SessionDriver {
 
     async setInputFiles(selector: string, files: string | string[]): Promise<void> {
       await page.locator(selector).setInputFiles(files);
+    },
+
+    async setGeolocation(latitude: number, longitude: number): Promise<void> {
+      // Context-level, not page-level: grant the permission first so the override
+      // works even when `browser.geolocation` did not pre-grant it at launch.
+      const context = page.context();
+      try {
+        await context.grantPermissions(["geolocation"]);
+        await context.setGeolocation({ latitude, longitude });
+      } catch (error) {
+        throw new Error(
+          `Failed to set geolocation to (${latitude}, ${longitude}): ${formatError(error)}`,
+          { cause: error }
+        );
+      }
     },
 
     countByRole(role: string, name: string): Promise<number> {

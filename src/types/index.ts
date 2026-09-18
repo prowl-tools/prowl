@@ -12,6 +12,17 @@ export type Viewport = {
   height: number;
 };
 
+/**
+ * A geographic coordinate for geolocation simulation (PROWL-018). Latitude is in
+ * [-90, 90] and longitude in [-180, 180]; both must be finite. Used both as the
+ * `browser.geolocation` config option (applied at context creation) and as the
+ * payload of the `setGeolocation` step (applied mid-hunt).
+ */
+export type Geolocation = {
+  latitude: number;
+  longitude: number;
+};
+
 /** Web execution target (default): drives a browser at `url`. */
 export type WebTarget = {
   type: "web";
@@ -75,6 +86,13 @@ export type Config = {
     engine: BrowserEngine;
     channel?: BrowserChannel;
     viewport: Viewport;
+    /**
+     * Geographic location to simulate for the run (PROWL-018), applied at
+     * browser-context creation (grants the `geolocation` permission and sets the
+     * coordinates). Web target only — native targets have no analog. Absent means
+     * the platform default (no override).
+     */
+    geolocation?: Geolocation;
   };
   artifacts: {
     screenshots: "on-failure" | "all";
@@ -176,6 +194,13 @@ export type WaitForNetworkIdleStep = { waitForNetworkIdle: { timeout?: number } 
 export type WaitForResponseStep = {
   waitForResponse: { url: string; status?: number; timeout?: number };
 };
+/**
+ * Web-only geolocation override applied mid-hunt (PROWL-018) — e.g. to test a
+ * "search near me" radius recalculating after the device moves. Grants the
+ * `geolocation` permission and sets the coordinates on the browser context, so it
+ * works even when `browser.geolocation` did not pre-grant.
+ */
+export type SetGeolocationStep = { setGeolocation: Geolocation };
 export type SelectOptionStep = { selectOption: { selector: string; value: string } };
 export type SelectStep = { select: Record<string, string> };
 export type OnDialogStep = { onDialog: { action: "accept" | "dismiss" } };
@@ -251,6 +276,7 @@ export type Step =
   | TypeStep
   | PressStep
   | WaitStep
+  | SetGeolocationStep
   | SelectOptionStep
   | SelectStep
   | OnDialogStep

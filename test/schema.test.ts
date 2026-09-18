@@ -178,6 +178,72 @@ describe("huntSchema doubleClick and rightClick steps (PROWL-019)", () => {
   });
 });
 
+describe("huntSchema setGeolocation step (PROWL-018)", () => {
+  it("accepts valid latitude/longitude", () => {
+    const parsed = huntSchema.parse({
+      steps: [{ setGeolocation: { latitude: 37.7749, longitude: -122.4194 } }]
+    });
+    expect(parsed.steps[0]).toEqual({
+      setGeolocation: { latitude: 37.7749, longitude: -122.4194 }
+    });
+  });
+
+  it("accepts the coordinate bounds (±90 lat, ±180 lon)", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ setGeolocation: { latitude: -90, longitude: 180 } }] })
+    ).not.toThrow();
+    expect(() =>
+      huntSchema.parse({ steps: [{ setGeolocation: { latitude: 90, longitude: -180 } }] })
+    ).not.toThrow();
+  });
+
+  it("rejects latitude outside [-90, 90]", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ setGeolocation: { latitude: 91, longitude: 0 } }] })
+    ).toThrow();
+    expect(() =>
+      huntSchema.parse({ steps: [{ setGeolocation: { latitude: -90.1, longitude: 0 } }] })
+    ).toThrow();
+  });
+
+  it("rejects longitude outside [-180, 180]", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ setGeolocation: { latitude: 0, longitude: 181 } }] })
+    ).toThrow();
+    expect(() =>
+      huntSchema.parse({ steps: [{ setGeolocation: { latitude: 0, longitude: -200 } }] })
+    ).toThrow();
+  });
+
+  it("rejects non-finite coordinates", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ setGeolocation: { latitude: Number.NaN, longitude: 0 } }] })
+    ).toThrow();
+    expect(() =>
+      huntSchema.parse({
+        steps: [{ setGeolocation: { latitude: 0, longitude: Number.POSITIVE_INFINITY } }]
+      })
+    ).toThrow();
+  });
+
+  it("rejects non-numeric coordinates", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ setGeolocation: { latitude: "37.7", longitude: 0 } }] })
+    ).toThrow();
+  });
+
+  it("rejects missing coordinates and unknown keys", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ setGeolocation: { latitude: 37.7 } }] })
+    ).toThrow();
+    expect(() =>
+      huntSchema.parse({
+        steps: [{ setGeolocation: { latitude: 0, longitude: 0, accuracy: 10 } }]
+      })
+    ).toThrow();
+  });
+});
+
 describe("huntSchema new step types", () => {
   it("accepts hover step", () => {
     const parsed = huntSchema.parse({
@@ -368,6 +434,23 @@ describe("configSchema browser options", () => {
       configSchema.parse({
         target: { url: "http://localhost" },
         browser: { viewport: "widescreen" }
+      })
+    ).toThrow();
+  });
+
+  it("accepts browser.geolocation with valid coordinates (PROWL-018)", () => {
+    const parsed = configSchema.parse({
+      target: { url: "http://localhost" },
+      browser: { geolocation: { latitude: 48.8566, longitude: 2.3522 } }
+    });
+    expect(parsed.browser?.geolocation).toEqual({ latitude: 48.8566, longitude: 2.3522 });
+  });
+
+  it("rejects browser.geolocation with out-of-range coordinates (PROWL-018)", () => {
+    expect(() =>
+      configSchema.parse({
+        target: { url: "http://localhost" },
+        browser: { geolocation: { latitude: 200, longitude: 2 } }
       })
     ).toThrow();
   });

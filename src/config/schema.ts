@@ -54,6 +54,17 @@ export const targetSchema = z.union([
   webTargetSchema
 ]);
 
+// Geolocation coordinates (PROWL-018), shared by the `browser.geolocation` config
+// option and the `setGeolocation` step. Latitude is clamped to [-90, 90] and
+// longitude to [-180, 180]; `.finite()` rejects NaN/±Infinity. Scope is lat/long
+// only — no accuracy/altitude fields.
+export const geolocationSchema = z
+  .object({
+    latitude: z.number().finite().min(-90).max(90),
+    longitude: z.number().finite().min(-180).max(180)
+  })
+  .strict();
+
 export const configSchema = z
   .object({
     target: targetSchema,
@@ -73,7 +84,9 @@ export const configSchema = z
             z.enum(["mobile", "tablet", "desktop"]),
             z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).strict()
           ])
-          .optional()
+          .optional(),
+        // Geolocation to simulate for the whole run (PROWL-018), web target only.
+        geolocation: geolocationSchema.optional()
       })
       .optional(),
     artifacts: z
@@ -153,6 +166,13 @@ export const doubleClickStepSchema = z
 export const rightClickStepSchema = z
   .object({
     rightClick: z.union([z.object({ selector: z.string().min(1) }).strict(), z.string().min(1)])
+  })
+  .strict();
+// setGeolocation (PROWL-018): override the simulated location mid-hunt. Web-only
+// (see WEB_ONLY_STEP_TYPES in config/target.ts); reuses the shared coordinate schema.
+export const setGeolocationStepSchema = z
+  .object({
+    setGeolocation: geolocationSchema
   })
   .strict();
 
@@ -477,6 +497,7 @@ export const stepSchema: z.ZodType<Step> = z.union([
   typeStepSchema,
   pressStepSchema,
   waitStepSchema,
+  setGeolocationStepSchema,
   selectOptionStepSchema,
   selectStepSchema,
   onDialogStepSchema,

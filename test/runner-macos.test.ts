@@ -134,6 +134,34 @@ describe("runHunt — macOS target (PROWL-048)", () => {
     }
   });
 
+  it("warns that geolocation is web-only and continues on a macOS target (PROWL-018)", async () => {
+    const project = setupProject(
+      MAC_CONFIG + "browser:\n  geolocation:\n    latitude: 25.7617\n    longitude: -80.1918\n",
+      "portable",
+      "steps:\n  - click: { selector: 'id=save' }\n"
+    );
+    const client = new FakeClient(macResponder);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const cwd = process.cwd();
+    try {
+      process.chdir(project);
+      const { result } = await runHunt({
+        huntName: "portable",
+        macClientFactory: () => client
+      });
+
+      // Degrades to a no-op with a warning — never a hard failure.
+      expect(result.status).toBe("pass");
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Geolocation simulation is not supported on macos targets")
+      );
+    } finally {
+      warnSpy.mockRestore();
+      process.chdir(cwd);
+      fs.rmSync(project, { recursive: true, force: true });
+    }
+  });
+
   it("rejects a hunt with a web-only step before launching the helper", async () => {
     const project = setupProject(MAC_CONFIG, "weburl", "steps:\n  - navigate: '/'\n");
     const client = new FakeClient(macResponder);

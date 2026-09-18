@@ -468,6 +468,42 @@ describe("executeSteps", () => {
     expect(rightClickFirstByRole).not.toHaveBeenCalled();
   });
 
+  // ---- setGeolocation (PROWL-018) ------------------------------------------
+
+  it("setGeolocation grants the permission then sets coordinates via the driver", async () => {
+    const order: string[] = [];
+    const setGeolocation = vi.fn(async (latitude: number, longitude: number) => {
+      order.push(`set:${latitude},${longitude}`);
+    });
+    const driver = pointerDriver({ setGeolocation });
+    const result = await runPointerStep(driver, [
+      { setGeolocation: { latitude: 40.7128, longitude: -74.006 } }
+    ]);
+
+    expect(result.failed).toBe(false);
+    expect(setGeolocation).toHaveBeenCalledWith(40.7128, -74.006);
+    expect(order).toEqual(["set:40.7128,-74.006"]);
+    expect(result.results[0]).toMatchObject({
+      type: "setGeolocation",
+      status: "pass",
+      value: "40.7128,-74.006"
+    });
+  });
+
+  it("setGeolocation surfaces a driver rejection as a failed step (native target)", async () => {
+    const setGeolocation = vi.fn(async () => {
+      throw new Error("setGeolocation is not supported by this target");
+    });
+    const driver = pointerDriver({ setGeolocation });
+    const result = await runPointerStep(driver, [
+      { setGeolocation: { latitude: 1, longitude: 2 } }
+    ]);
+
+    expect(result.failed).toBe(true);
+    expect(result.results[0].status).toBe("fail");
+    expect(result.results[0].error).toContain("not supported");
+  });
+
   it("uses fill shorthand with label-first matching", async () => {
     const page = createMockPage({
       labelCounts: { Email: 1 }

@@ -159,7 +159,11 @@ function mergeConfig(partial: Partial<Config>): Config {
       timeout: partial.browser?.timeout ?? DEFAULT_CONFIG.browser.timeout,
       engine: (partial.browser as { engine?: BrowserEngine } | undefined)?.engine ?? DEFAULT_CONFIG.browser.engine,
       channel: (partial.browser as { channel?: BrowserChannel } | undefined)?.channel,
-      viewport: resolveViewport((partial.browser as { viewport?: string | Viewport } | undefined)?.viewport)
+      viewport: resolveViewport((partial.browser as { viewport?: string | Viewport } | undefined)?.viewport),
+      // No default: absent means no geolocation override (PROWL-018).
+      ...(partial.browser?.geolocation !== undefined
+        ? { geolocation: partial.browser.geolocation }
+        : {})
     },
     artifacts: {
       screenshots: partial.artifacts?.screenshots ?? DEFAULT_CONFIG.artifacts.screenshots,

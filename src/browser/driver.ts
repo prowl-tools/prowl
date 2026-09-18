@@ -97,6 +97,15 @@ export interface SessionDriver {
   scrollIntoView(selector: string): Promise<void>;
   setInputFiles(selector: string, files: string | string[]): Promise<void>;
 
+  // browser-context state ---------------------------------------------------
+  /**
+   * Simulate a geographic location (PROWL-018). A browser-CONTEXT operation, not a
+   * page one: grants the `geolocation` permission and sets the coordinates so it
+   * works even when `browser.geolocation` did not pre-grant. Web-only — native
+   * drivers reject it.
+   */
+  setGeolocation(latitude: number, longitude: number): Promise<void>;
+
   // semantic locators (role / label shorthand resolution) -------------------
   countByRole(role: string, name: string): Promise<number>;
   clickFirstByRole(role: string, name: string): Promise<void>;

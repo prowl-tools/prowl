@@ -189,7 +189,8 @@ async function executeHuntAttempt(
     runDir,
     engine,
     channel,
-    viewport
+    viewport,
+    ...(config.browser.geolocation ? { geolocation: config.browser.geolocation } : {})
   });
 
   let result: RunResult;
@@ -797,6 +798,14 @@ async function runNativeHunt<TTarget extends NativeRunTarget>(
   if (options.video ?? config.artifacts.video) {
     console.warn(
       `Video recording is not supported on ${native.targetType} targets (web only); continuing without video.`
+    );
+  }
+
+  // Same honest degradation for browser.geolocation (PROWL-018): a context-level
+  // Playwright capability with no native analog.
+  if (config.browser.geolocation) {
+    console.warn(
+      `Geolocation simulation is not supported on ${native.targetType} targets (web only); continuing without it.`
     );
   }
 

@@ -82,30 +82,6 @@ agreement, create the Developer ID Application cert, create the App Store Connec
 - Use language like "compared to" or "alternative to" rather than disparaging language
 - Include disclaimers like "Maestro is a trademark of mobile-dev-inc" where appropriate
 
-{PROWL-018} **P4-007: Geolocation Simulation**
-   Simulate geographic location for location-dependent web features.
-
-**Maestro equivalent**: `setLocation`
-
-```yaml
-# In config.yml
-browser:
-  geolocation:
-    latitude: 25.7617
-    longitude: -80.1918
-
-# Or as a step
-- setGeolocation:
-    latitude: 25.7617
-    longitude: -80.1918
-```
-
-**Acceptance Criteria**:
-- Config option: `browser.geolocation: { latitude: number, longitude: number }`
-- Step type: `setGeolocation: { latitude: number, longitude: number }`
-- Playwright: `context.grantPermissions(['geolocation'])` + `context.setGeolocation()`
-- Schema validation, unit tests
-
 {PROWL-030} **P6-007: Hunt Dependency Graph**
    Define execution order dependencies between hunts for `prowl ci`.
 
