@@ -148,6 +148,36 @@ describe("huntSchema shorthand syntax", () => {
   });
 });
 
+describe("huntSchema doubleClick and rightClick steps (PROWL-019)", () => {
+  it("accepts doubleClick and rightClick in string and object forms", () => {
+    const parsed = huntSchema.parse({
+      steps: [
+        { doubleClick: "Rename" },
+        { doubleClick: { selector: "[data-testid=cell]" } },
+        { rightClick: "File" },
+        { rightClick: { selector: "#node" } }
+      ]
+    });
+    expect(parsed.steps).toHaveLength(4);
+  });
+
+  it("rejects doubleClick with an empty selector", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ doubleClick: { selector: "" } }] })
+    ).toThrow();
+  });
+
+  it("rejects rightClick with an empty string target", () => {
+    expect(() => huntSchema.parse({ steps: [{ rightClick: "" }] })).toThrow();
+  });
+
+  it("rejects doubleClick with unknown keys", () => {
+    expect(() =>
+      huntSchema.parse({ steps: [{ doubleClick: { selector: "#a", count: 2 } }] })
+    ).toThrow();
+  });
+});
+
 describe("huntSchema new step types", () => {
   it("accepts hover step", () => {
     const parsed = huntSchema.parse({

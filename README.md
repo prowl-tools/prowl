@@ -425,6 +425,7 @@ macOS target (with a clear error), and `prowl login` / URL guardrails do not app
 | `screenshot`, `assertScreenshot` | `onDialog`, `select` / `selectOption` |
 | `hover`, `scrollTo` | `setInputFiles`, `waitForDownload` |
 | `repeat`, `if`, `runHunt`, `copyText` | `scroll` (directional; see below) / `assert: urlIncludes` / `urlEquals` |
+| | `doubleClick`, `rightClick` |
 
 **Scroll steps** differ per verb across targets:
 
@@ -501,6 +502,35 @@ Click an element. Shorthand finds buttons by text, then falls back to any matchi
 # Explicit — use any Playwright selector
 - click:
     selector: "[data-testid='submit-btn']"
+```
+
+### doubleClick
+
+Double-click an element (Playwright `dblclick()`) — e.g. to select a word or
+enter an inline editor. Same `string | { selector }` shape as `click`: shorthand
+finds buttons by text then falls back to any matching text. **Web target only.**
+
+```yaml
+# Shorthand
+- doubleClick: "Rename"
+
+# Explicit
+- doubleClick:
+    selector: "[data-testid='grid-cell']"
+```
+
+### rightClick
+
+Right-click (secondary/context click, Playwright `click({ button: "right" })`) —
+e.g. to open a context menu. Same shape as `click`. **Web target only.**
+
+```yaml
+# Shorthand
+- rightClick: "File"
+
+# Explicit
+- rightClick:
+    selector: "#tree-node-3"
 ```
 
 ### fill
@@ -894,8 +924,9 @@ among multiple. A heal is logged as a warning and recorded in the run report:
 - `result.json`: the step gains a `healedFrom` field
 - `summary.md`: a **Self-Healed Selectors** section lists `original → healed`
 
-Healing applies to action steps (`click`, `fill`, `selectOption`, `setInputFiles`,
-`press`, `hover`, `scrollTo`) and is meant as a safety net — update your hunt to a stable
+Healing applies to action steps (`click`, `doubleClick`, `rightClick`, `fill`,
+`selectOption`, `setInputFiles`, `press`, `hover`, `scrollTo`) — on their explicit
+`{ selector }` form — and is meant as a safety net — update your hunt to a stable
 selector (ideally a `data-testid`) when you see a heal. `waitForSelector` is excluded,
 since a not-yet-present element is its normal state.
 

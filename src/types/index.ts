@@ -162,6 +162,10 @@ export type Hunt = {
 
 export type NavigateStep = { navigate: string };
 export type ClickStep = { click: { selector: string } | string };
+/** Web-only double-click (Playwright `dblclick()`) — text selection, expand-in-place, etc. */
+export type DoubleClickStep = { doubleClick: { selector: string } | string };
+/** Web-only right/secondary click (Playwright `click({ button: "right" })`) — context menus. */
+export type RightClickStep = { rightClick: { selector: string } | string };
 export type FillStep = { fill: { selector: string; value: string } | Record<string, string> };
 export type TypeStep = { type: string };
 export type PressStep = { press: { selector: string; key: string } };
@@ -241,6 +245,8 @@ export type AssertWithAiStep = {
 export type Step =
   | NavigateStep
   | ClickStep
+  | DoubleClickStep
+  | RightClickStep
   | FillStep
   | TypeStep
   | PressStep

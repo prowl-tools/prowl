@@ -26,6 +26,7 @@ function createMockPage(options?: {
       count: vi.fn(async () => count),
       first: vi.fn(() => locator),
       click: vi.fn(async () => undefined),
+      dblclick: vi.fn(async () => undefined),
       fill: vi.fn(async () => undefined),
       press: vi.fn(async () => undefined),
       selectOption: vi.fn(async () => undefined),
@@ -299,6 +300,172 @@ describe("executeSteps", () => {
     expect(result.failed).toBe(false);
     expect(page.locator).toHaveBeenCalledWith('text="Sign In"');
     fs.rmSync(runDir, { recursive: true, force: true });
+  });
+
+  // ---- doubleClick / rightClick (PROWL-019) --------------------------------
+
+  function pointerDriver(overrides: Record<string, unknown>): SessionDriver {
+    return {
+      capabilities: new Set(["interact", "query"]),
+      parseTextSelector: () => null,
+      currentUrl: () => "http://localhost/",
+      screenshot: vi.fn(async () => undefined),
+      ...overrides
+    } as unknown as SessionDriver;
+  }
+
+  async function runPointerStep(driver: SessionDriver, steps: Step[], overrides?: Record<string, unknown>) {
+    const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-steps-"));
+    try {
+      return await executeSteps({
+        driver,
+        steps,
+        targetUrl: "http://localhost",
+        runDir,
+        screenshotsMode: "on-failure",
+        forbiddenSelectors: [],
+        allowedDomains: ["localhost"],
+        maxTotalTimeMs: 30000,
+        maxSteps: 50,
+        redactedFillSteps: new Set(),
+        configDir: runDir,
+        ...overrides
+      });
+    } finally {
+      fs.rmSync(runDir, { recursive: true, force: true });
+    }
+  }
+
+  it("doubleClick (object form) dispatches driver.dblclick on the selector", async () => {
+    const dblclick = vi.fn(async () => undefined);
+    const driver = pointerDriver({ dblclick });
+    const result = await runPointerStep(driver, [{ doubleClick: { selector: "#cell" } }]);
+
+    expect(result.failed).toBe(false);
+    expect(dblclick).toHaveBeenCalledWith("#cell");
+    expect(result.results[0]).toMatchObject({ type: "doubleClick", status: "pass", selector: "#cell" });
+  });
+
+  it("rightClick (object form) dispatches driver.rightClick on the selector", async () => {
+    const rightClick = vi.fn(async () => undefined);
+    const driver = pointerDriver({ rightClick });
+    const result = await runPointerStep(driver, [{ rightClick: { selector: "#node" } }]);
+
+    expect(result.failed).toBe(false);
+    expect(rightClick).toHaveBeenCalledWith("#node");
+    expect(result.results[0]).toMatchObject({ type: "rightClick", status: "pass", selector: "#node" });
+  });
+
+  it("doubleClick (string form) prefers role=button then dispatches dblclickFirstByRole", async () => {
+    const countByRole = vi.fn(async () => 1);
+    const dblclickFirstByRole = vi.fn(async () => undefined);
+    const dblclickFirst = vi.fn(async () => undefined);
+    const driver = pointerDriver({ countByRole, dblclickFirstByRole, dblclickFirst });
+    const result = await runPointerStep(driver, [{ doubleClick: "Rename" }]);
+
+    expect(result.failed).toBe(false);
+    expect(countByRole).toHaveBeenCalledWith("button", "Rename");
+    expect(dblclickFirstByRole).toHaveBeenCalledWith("button", "Rename");
+    expect(dblclickFirst).not.toHaveBeenCalled();
+    expect(result.results[0]).toMatchObject({
+      type: "doubleClick",
+      selector: 'role=button[name="Rename"]'
+    });
+  });
+
+  it("doubleClick (string form) falls back to dblclickFirst on text when no button matches", async () => {
+    const countByRole = vi.fn(async () => 0);
+    const dblclickFirst = vi.fn(async () => undefined);
+    const driver = pointerDriver({ countByRole, dblclickFirst, dblclickFirstByRole: vi.fn() });
+    const result = await runPointerStep(driver, [{ doubleClick: "Rename" }]);
+
+    expect(result.failed).toBe(false);
+    expect(dblclickFirst).toHaveBeenCalledWith('text="Rename"');
+    expect(result.results[0]).toMatchObject({ type: "doubleClick", selector: 'text="Rename"' });
+  });
+
+  it("rightClick (string form) prefers role=button then falls back to text", async () => {
+    const rightClickFirstByRole = vi.fn(async () => undefined);
+    const rightClickFirst = vi.fn(async () => undefined);
+    const roleDriver = pointerDriver({
+      countByRole: vi.fn(async () => 1),
+      rightClickFirstByRole,
+      rightClickFirst
+    });
+    const roleResult = await runPointerStep(roleDriver, [{ rightClick: "File" }]);
+    expect(roleResult.failed).toBe(false);
+    expect(rightClickFirstByRole).toHaveBeenCalledWith("button", "File");
+
+    const textFirst = vi.fn(async () => undefined);
+    const textDriver = pointerDriver({
+      countByRole: vi.fn(async () => 0),
+      rightClickFirstByRole: vi.fn(),
+      rightClickFirst: textFirst
+    });
+    const textResult = await runPointerStep(textDriver, [{ rightClick: "File" }]);
+    expect(textResult.failed).toBe(false);
+    expect(textFirst).toHaveBeenCalledWith('text="File"');
+  });
+
+  it("substitutes runtime vars for doubleClick/rightClick string and selector forms", async () => {
+    const countByRole = vi.fn(async () => 1);
+    const dblclickFirstByRole = vi.fn(async () => undefined);
+    const rightClickFirstByRole = vi.fn(async () => undefined);
+    const dblclick = vi.fn(async () => undefined);
+    const driver = pointerDriver({ countByRole, dblclickFirstByRole, rightClickFirstByRole, dblclick });
+    const result = await runPointerStep(
+      driver,
+      [
+        { doubleClick: "{{LABEL}}" },
+        { rightClick: "{{LABEL}}" },
+        { doubleClick: { selector: "{{CELL_SELECTOR}}" } }
+      ],
+      {
+        runtimeVars: new Map([
+          ["LABEL", "Rename"],
+          ["CELL_SELECTOR", "#cell"]
+        ])
+      }
+    );
+
+    expect(result.failed).toBe(false);
+    expect(countByRole).toHaveBeenNthCalledWith(1, "button", "Rename");
+    expect(countByRole).toHaveBeenNthCalledWith(2, "button", "Rename");
+    expect(dblclickFirstByRole).toHaveBeenCalledWith("button", "Rename");
+    expect(rightClickFirstByRole).toHaveBeenCalledWith("button", "Rename");
+    expect(dblclick).toHaveBeenCalledWith("#cell");
+    expect(result.results[0]).toMatchObject({ type: "doubleClick", selector: 'role=button[name="Rename"]' });
+    expect(result.results[1]).toMatchObject({ type: "rightClick", selector: 'role=button[name="Rename"]' });
+    expect(result.results[2]).toMatchObject({ type: "doubleClick", selector: "#cell" });
+  });
+
+  it("rejects a forbidden selector for doubleClick (object form)", async () => {
+    const dblclick = vi.fn(async () => undefined);
+    const driver = pointerDriver({ dblclick });
+    const result = await runPointerStep(driver, [{ doubleClick: { selector: "[data-danger]" } }], {
+      forbiddenSelectors: ["[data-danger]"]
+    });
+
+    expect(result.failed).toBe(true);
+    expect(result.results[0].status).toBe("fail");
+    expect(result.results[0].error).toContain("Forbidden selector");
+    expect(dblclick).not.toHaveBeenCalled();
+  });
+
+  it("rejects rightClick (string form) when the derived role selector is forbidden", async () => {
+    const rightClickFirstByRole = vi.fn(async () => undefined);
+    const driver = pointerDriver({
+      countByRole: vi.fn(async () => 1),
+      rightClickFirstByRole,
+      rightClickFirst: vi.fn()
+    });
+    const result = await runPointerStep(driver, [{ rightClick: "Delete" }], {
+      forbiddenSelectors: ["role=button"]
+    });
+
+    expect(result.failed).toBe(true);
+    expect(result.results[0].error).toContain("Forbidden selector");
+    expect(rightClickFirstByRole).not.toHaveBeenCalled();
   });
 
   it("uses fill shorthand with label-first matching", async () => {

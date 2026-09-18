@@ -23,6 +23,11 @@ describe("webOnlyReason", () => {
     expect(webOnlyReason({ waitForResponse: { url: "**/api" } })).toBe("waitForResponse");
   });
 
+  it("flags doubleClick and rightClick as web-only (PROWL-019)", () => {
+    expect(webOnlyReason({ doubleClick: { selector: "#cell" } })).toBe("doubleClick");
+    expect(webOnlyReason({ rightClick: "File" })).toBe("rightClick");
+  });
+
   it("flags url assertions but allows visible assertions", () => {
     expect(webOnlyReason({ assert: { urlIncludes: "/x" } })).toBe("assert (url)");
     expect(webOnlyReason({ assert: { visible: "Ready" } })).toBeNull();
@@ -56,6 +61,18 @@ describe("assertStepsSupportedByTarget", () => {
     expect(() =>
       assertStepsSupportedByTarget([{ waitForResponse: { url: "**/api/orders" } }], "macos")
     ).toThrow('Step "waitForResponse" is not supported by the macOS target');
+  });
+
+  it("rejects doubleClick and rightClick on native targets (PROWL-019)", () => {
+    expect(() =>
+      assertStepsSupportedByTarget([{ doubleClick: { selector: "#cell" } }], "macos")
+    ).toThrow('Step "doubleClick" is not supported by the macOS target');
+    expect(() =>
+      assertStepsSupportedByTarget([{ rightClick: "File" }], "ios")
+    ).toThrow('Step "rightClick" is not supported by the iOS target');
+    expect(() =>
+      assertStepsSupportedByTarget([{ doubleClick: "Rename" }], "android")
+    ).toThrow('Step "doubleClick" is not supported by the Android target');
   });
 
   it("accepts a fully portable macos hunt", () => {

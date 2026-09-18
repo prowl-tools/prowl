@@ -509,6 +509,44 @@ describe("createPlaywrightDriver", () => {
     }
   });
 
+  it("maps doubleClick/rightClick to Playwright dblclick and right-button click (PROWL-019)", async () => {
+    const dblclick = vi.fn(async () => undefined);
+    const click = vi.fn(async () => undefined);
+    const locator = { first: vi.fn(() => locator), dblclick, click };
+    const page = { locator: vi.fn(() => locator) };
+    const driver = createPlaywrightDriver(page as unknown as Parameters<typeof createPlaywrightDriver>[0]);
+
+    await driver.dblclick("#cell");
+    expect(dblclick).toHaveBeenLastCalledWith();
+
+    await driver.dblclickFirst("#cell");
+    expect(locator.first).toHaveBeenCalled();
+    expect(dblclick).toHaveBeenCalledTimes(2);
+    expect(dblclick).toHaveBeenLastCalledWith();
+
+    await driver.rightClick("#node");
+    expect(click).toHaveBeenLastCalledWith({ button: "right" });
+
+    await driver.rightClickFirst("#node");
+    expect(click).toHaveBeenLastCalledWith({ button: "right" });
+    expect(click).toHaveBeenCalledTimes(2);
+  });
+
+  it("maps role-based doubleClick/rightClick through getByRole (PROWL-019)", async () => {
+    const dblclick = vi.fn(async () => undefined);
+    const click = vi.fn(async () => undefined);
+    const roleLocator = { first: vi.fn(() => roleLocator), dblclick, click };
+    const page = { getByRole: vi.fn(() => roleLocator) };
+    const driver = createPlaywrightDriver(page as unknown as Parameters<typeof createPlaywrightDriver>[0]);
+
+    await driver.dblclickFirstByRole("button", "Rename");
+    expect(page.getByRole).toHaveBeenLastCalledWith("button", { name: "Rename" });
+    expect(dblclick).toHaveBeenCalled();
+
+    await driver.rightClickFirstByRole("button", "File");
+    expect(click).toHaveBeenLastCalledWith({ button: "right" });
+  });
+
   it("scrolls by the default amount and direction vectors through page.evaluate", async () => {
     const page = { evaluate: vi.fn(async () => undefined) };
     const driver = createPlaywrightDriver(page as unknown as Parameters<typeof createPlaywrightDriver>[0]);

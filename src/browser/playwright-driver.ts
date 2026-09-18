@@ -248,6 +248,22 @@ export function createPlaywrightDriver(page: Page): SessionDriver {
       await page.locator(selector).first().click();
     },
 
+    async dblclick(selector: string): Promise<void> {
+      await page.locator(selector).dblclick();
+    },
+
+    async dblclickFirst(selector: string): Promise<void> {
+      await page.locator(selector).first().dblclick();
+    },
+
+    async rightClick(selector: string): Promise<void> {
+      await page.locator(selector).click({ button: "right" });
+    },
+
+    async rightClickFirst(selector: string): Promise<void> {
+      await page.locator(selector).first().click({ button: "right" });
+    },
+
     async fill(selector: string, value: string): Promise<void> {
       await page.locator(selector).fill(value);
     },
@@ -297,6 +313,14 @@ export function createPlaywrightDriver(page: Page): SessionDriver {
 
     async clickFirstByRole(role: string, name: string): Promise<void> {
       await page.getByRole(role as PlaywrightRole, { name }).first().click();
+    },
+
+    async dblclickFirstByRole(role: string, name: string): Promise<void> {
+      await page.getByRole(role as PlaywrightRole, { name }).first().dblclick();
+    },
+
+    async rightClickFirstByRole(role: string, name: string): Promise<void> {
+      await page.getByRole(role as PlaywrightRole, { name }).first().click({ button: "right" });
     },
 
     countByLabel(label: string): Promise<number> {

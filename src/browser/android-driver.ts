@@ -311,6 +311,20 @@ export function createAndroidDriver(
     // interactions ---------------------------------------------------------
     click: clickSelector,
     clickFirst: clickSelector,
+    // doubleClick / rightClick are web-only pointer variants (PROWL-019); rejected
+    // before launch by the per-target step gate, stubbed here to satisfy the interface.
+    dblclick(): Promise<void> {
+      return rejectUnsupported("doubleClick");
+    },
+    dblclickFirst(): Promise<void> {
+      return rejectUnsupported("doubleClick");
+    },
+    rightClick(): Promise<void> {
+      return rejectUnsupported("rightClick");
+    },
+    rightClickFirst(): Promise<void> {
+      return rejectUnsupported("rightClick");
+    },
     fill: fillSelector,
     fillFirst: fillSelector,
     async press(_selector: string, key: string): Promise<void> {
@@ -368,6 +382,12 @@ export function createAndroidDriver(
         throw new Error(`No element matched role=${role}[name="${name}"]`);
       }
       await client.click(id);
+    },
+    dblclickFirstByRole(): Promise<void> {
+      return rejectUnsupported("doubleClick");
+    },
+    rightClickFirstByRole(): Promise<void> {
+      return rejectUnsupported("rightClick");
     },
     async countByLabel(label: string): Promise<number> {
       return (await client.findElements({ by: "accessibilityId", value: label })).length;

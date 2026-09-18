@@ -106,24 +106,6 @@ browser:
 - Playwright: `context.grantPermissions(['geolocation'])` + `context.setGeolocation()`
 - Schema validation, unit tests
 
-{PROWL-019} **P4-008: `doubleClick` and `rightClick` Step Types**
-   Additional click variants for web-specific interactions (text selection, context menus).
-
-```yaml
-- doubleClick:
-    selector: ".editable-text"
-- rightClick:
-    selector: ".context-menu-trigger"
-```
-
-**Acceptance Criteria**:
-- `doubleClick: { selector: string }` — Playwright `dblclick()`
-- `rightClick: { selector: string }` — Playwright `click({ button: 'right' })`
-- Forbidden selector checks
-- Schema validation, unit tests
-
----
-
 {PROWL-030} **P6-007: Hunt Dependency Graph**
    Define execution order dependencies between hunts for `prowl ci`.
 
