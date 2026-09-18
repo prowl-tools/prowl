@@ -28,6 +28,10 @@ describe("webOnlyReason", () => {
     expect(webOnlyReason({ rightClick: "File" })).toBe("rightClick");
   });
 
+  it("flags setGeolocation as web-only (PROWL-018)", () => {
+    expect(webOnlyReason({ setGeolocation: { latitude: 0, longitude: 0 } })).toBe("setGeolocation");
+  });
+
   it("flags url assertions but allows visible assertions", () => {
     expect(webOnlyReason({ assert: { urlIncludes: "/x" } })).toBe("assert (url)");
     expect(webOnlyReason({ assert: { visible: "Ready" } })).toBeNull();
@@ -73,6 +77,18 @@ describe("assertStepsSupportedByTarget", () => {
     expect(() =>
       assertStepsSupportedByTarget([{ doubleClick: "Rename" }], "android")
     ).toThrow('Step "doubleClick" is not supported by the Android target');
+  });
+
+  it("rejects setGeolocation on native targets (PROWL-018)", () => {
+    expect(() =>
+      assertStepsSupportedByTarget([{ setGeolocation: { latitude: 1, longitude: 2 } }], "macos")
+    ).toThrow('Step "setGeolocation" is not supported by the macOS target');
+    expect(() =>
+      assertStepsSupportedByTarget([{ setGeolocation: { latitude: 1, longitude: 2 } }], "ios")
+    ).toThrow('Step "setGeolocation" is not supported by the iOS target');
+    expect(() =>
+      assertStepsSupportedByTarget([{ setGeolocation: { latitude: 1, longitude: 2 } }], "android")
+    ).toThrow('Step "setGeolocation" is not supported by the Android target');
   });
 
   it("accepts a fully portable macos hunt", () => {

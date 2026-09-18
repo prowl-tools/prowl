@@ -282,6 +282,35 @@ describe("launchBrowser", () => {
     }
   });
 
+  it("passes geolocation + permission to context when configured (PROWL-018)", async () => {
+    const opts = makeOptions({ geolocation: { latitude: 51.5074, longitude: -0.1278 } });
+    try {
+      await launchBrowser(opts);
+      const browser = await (chromium.launch as ReturnType<typeof vi.fn>).mock.results[0].value;
+      expect(browser.newContext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          geolocation: { latitude: 51.5074, longitude: -0.1278 },
+          permissions: ["geolocation"]
+        })
+      );
+    } finally {
+      fs.rmSync(opts.runDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not set geolocation on context by default (PROWL-018)", async () => {
+    const opts = makeOptions();
+    try {
+      await launchBrowser(opts);
+      const browser = await (chromium.launch as ReturnType<typeof vi.fn>).mock.results[0].value;
+      const callArgs = browser.newContext.mock.calls[0][0] ?? {};
+      expect(callArgs.geolocation).toBeUndefined();
+      expect(callArgs.permissions).toBeUndefined();
+    } finally {
+      fs.rmSync(opts.runDir, { recursive: true, force: true });
+    }
+  });
+
   it("closes the browser when setup fails after launch", async () => {
     const browser = await chromium.launch();
     (chromium.launch as ReturnType<typeof vi.fn>).mockClear();
@@ -545,6 +574,26 @@ describe("createPlaywrightDriver", () => {
 
     await driver.rightClickFirstByRole("button", "File");
     expect(click).toHaveBeenLastCalledWith({ button: "right" });
+  });
+
+  it("maps setGeolocation to context grantPermissions then setGeolocation (PROWL-018)", async () => {
+    const calls: string[] = [];
+    const grantPermissions = vi.fn(async () => {
+      calls.push("grant");
+    });
+    const setGeolocation = vi.fn(async () => {
+      calls.push("set");
+    });
+    const context = { grantPermissions, setGeolocation };
+    const page = { context: vi.fn(() => context) };
+    const driver = createPlaywrightDriver(page as unknown as Parameters<typeof createPlaywrightDriver>[0]);
+
+    await driver.setGeolocation(35.6762, 139.6503);
+
+    expect(grantPermissions).toHaveBeenCalledWith(["geolocation"]);
+    expect(setGeolocation).toHaveBeenCalledWith({ latitude: 35.6762, longitude: 139.6503 });
+    // Permission must be granted before the coordinates are set.
+    expect(calls).toEqual(["grant", "set"]);
   });
 
   it("scrolls by the default amount and direction vectors through page.evaluate", async () => {
