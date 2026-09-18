@@ -5,6 +5,17 @@ All notable changes to Prowl will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Geolocation simulation (PROWL-018).** Test location-dependent web features by
+  simulating a device position. Set it for the whole run with the
+  `browser.geolocation: { latitude, longitude }` config option (applied at
+  browser-context creation, which also grants the `geolocation` permission), or
+  change it mid-hunt with the new `setGeolocation: { latitude, longitude }` step —
+  e.g. to test a "search near me" radius recalculating after the device moves. The
+  step grants the permission itself, so it works even when the config option did
+  not pre-grant it. Coordinates are validated (`latitude` in `[-90, 90]`,
+  `longitude` in `[-180, 180]`, both finite). The step is **web-only**: on the
+  macOS, iOS, and Android targets a hunt using it is rejected up front with the
+  standard clear web-only message.
 - **`doubleClick` and `rightClick` step types (PROWL-019).** Two web-specific
   pointer steps for interactions the plain `click` can't express — double-click to
   select text or open an inline editor (`doubleClick`, Playwright `dblclick()`),

@@ -425,7 +425,7 @@ macOS target (with a clear error), and `prowl login` / URL guardrails do not app
 | `screenshot`, `assertScreenshot` | `onDialog`, `select` / `selectOption` |
 | `hover`, `scrollTo` | `setInputFiles`, `waitForDownload` |
 | `repeat`, `if`, `runHunt`, `copyText` | `scroll` (directional; see below) / `assert: urlIncludes` / `urlEquals` |
-| | `doubleClick`, `rightClick` |
+| | `doubleClick`, `rightClick`, `setGeolocation` |
 
 **Scroll steps** differ per verb across targets:
 
@@ -531,6 +531,21 @@ e.g. to open a context menu. Same shape as `click`. **Web target only.**
 # Explicit
 - rightClick:
     selector: "#tree-node-3"
+```
+
+### setGeolocation
+
+Override the simulated geographic location mid-hunt — e.g. to test a "search near
+me" result set recalculating after the device moves. Grants the browser's
+`geolocation` permission and sets the coordinates on the context, so it works even
+when the `browser.geolocation` config option (see [Config Reference](#config-reference))
+was not set at launch. `latitude` must be in `[-90, 90]` and `longitude` in
+`[-180, 180]`. **Web target only.**
+
+```yaml
+- setGeolocation:
+    latitude: 37.7749
+    longitude: -122.4194
 ```
 
 ### fill
@@ -862,6 +877,9 @@ browser:
   headless: true                       # false = show the browser window
   slowMo: 0                           # ms delay between actions (debugging)
   timeout: 30000                       # default page operation timeout; macOS app launch timeout
+  # geolocation:                       # simulate a location for the whole run (web target only)
+  #   latitude: 37.7749                # [-90, 90]
+  #   longitude: -122.4194             # [-180, 180]
 
 # What gets saved per run
 artifacts:
