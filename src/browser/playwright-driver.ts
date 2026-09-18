@@ -323,8 +323,15 @@ export function createPlaywrightDriver(page: Page): SessionDriver {
       // Context-level, not page-level: grant the permission first so the override
       // works even when `browser.geolocation` did not pre-grant it at launch.
       const context = page.context();
-      await context.grantPermissions(["geolocation"]);
-      await context.setGeolocation({ latitude, longitude });
+      try {
+        await context.grantPermissions(["geolocation"]);
+        await context.setGeolocation({ latitude, longitude });
+      } catch (error) {
+        throw new Error(
+          `Failed to set geolocation to (${latitude}, ${longitude}): ${formatError(error)}`,
+          { cause: error }
+        );
+      }
     },
 
     countByRole(role: string, name: string): Promise<number> {

@@ -596,6 +596,41 @@ describe("createPlaywrightDriver", () => {
     expect(calls).toEqual(["grant", "set"]);
   });
 
+  it("adds coordinate context when granting geolocation permission fails", async () => {
+    const error = new Error("permission denied");
+    const grantPermissions = vi.fn(async () => {
+      throw error;
+    });
+    const setGeolocation = vi.fn(async () => undefined);
+    const context = { grantPermissions, setGeolocation };
+    const page = { context: vi.fn(() => context) };
+    const driver = createPlaywrightDriver(page as unknown as Parameters<typeof createPlaywrightDriver>[0]);
+
+    await expect(driver.setGeolocation(35.6762, 139.6503)).rejects.toMatchObject({
+      cause: error,
+      message: "Failed to set geolocation to (35.6762, 139.6503): permission denied"
+    });
+    expect(setGeolocation).not.toHaveBeenCalled();
+  });
+
+  it("adds coordinate context when setting geolocation coordinates fails", async () => {
+    const error = new Error("invalid context");
+    const grantPermissions = vi.fn(async () => undefined);
+    const setGeolocation = vi.fn(async () => {
+      throw error;
+    });
+    const context = { grantPermissions, setGeolocation };
+    const page = { context: vi.fn(() => context) };
+    const driver = createPlaywrightDriver(page as unknown as Parameters<typeof createPlaywrightDriver>[0]);
+
+    await expect(driver.setGeolocation(35.6762, 139.6503)).rejects.toMatchObject({
+      cause: error,
+      message: "Failed to set geolocation to (35.6762, 139.6503): invalid context"
+    });
+    expect(grantPermissions).toHaveBeenCalledWith(["geolocation"]);
+    expect(setGeolocation).toHaveBeenCalledWith({ latitude: 35.6762, longitude: 139.6503 });
+  });
+
   it("scrolls by the default amount and direction vectors through page.evaluate", async () => {
     const page = { evaluate: vi.fn(async () => undefined) };
     const driver = createPlaywrightDriver(page as unknown as Parameters<typeof createPlaywrightDriver>[0]);
