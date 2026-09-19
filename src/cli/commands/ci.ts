@@ -1,4 +1,6 @@
 import { Command } from "commander";
+import fs from "node:fs";
+import path from "node:path";
 import chalk from "chalk";
 import { runSuite } from "../../runner/suite.js";
 import { printHuntHeader, printStepResult, printHuntSummary } from "../output.js";
@@ -16,6 +18,18 @@ function parseTagList(value: string | undefined, flag: "--include-tags" | "--exc
     throw new Error(`${flag} requires at least one non-empty tag`);
   }
   return tags;
+}
+
+// Resolve --output to an absolute directory and validate it up front, before any
+// hunts run. Relative paths are resolved against cwd. A path that exists but is not
+// a directory is a hard error (exit 1) so CI fails fast instead of mid-suite.
+function resolveOutputDir(output: string | undefined): string | undefined {
+  if (output === undefined) return undefined;
+  const resolved = path.resolve(output);
+  if (fs.existsSync(resolved) && !fs.statSync(resolved).isDirectory()) {
+    throw new Error(`--output path exists and is not a directory: ${resolved}`);
+  }
+  return resolved;
 }
 
 function printFailureDetails(results: CiHuntResult[]): void {
@@ -42,6 +56,7 @@ export function buildCiCommand(): Command {
     .option("--exclude-tags <tags>", "Skip hunts matching these tags (comma-separated)")
     .option("--fail-fast", "Stop starting new hunts after the first failure (remaining hunts are skipped)")
     .option("--json", "Output results as JSON")
+    .option("--output <dir>", "Also write a copy of ci-result.json into this directory (for CI artifact upload)")
     .option("--parallel <count>", "Run hunts in parallel with N workers", (value) => {
       const n = Number(value);
       if (!Number.isInteger(n) || n < 1) {
@@ -52,6 +67,8 @@ export function buildCiCommand(): Command {
     .action(async (options) => {
       const includeTags = parseTagList(options.includeTags as string | undefined, "--include-tags");
       const excludeTags = parseTagList(options.excludeTags as string | undefined, "--exclude-tags");
+      // Validate --output before running any hunts so a bad path fails fast (exit 1).
+      const outputDir = resolveOutputDir(options.output as string | undefined);
 
       const parallel = options.parallel as number | undefined;
       const isParallel = parallel !== undefined && parallel > 1;
@@ -115,6 +132,16 @@ export function buildCiCommand(): Command {
         return;
       }
 
+      // Write the additional --output copy of ci-result.json. The canonical copy in
+      // the run directory (resultPath) is untouched. Nothing is written when the suite
+      // produced no result file (e.g. no-hunts already returned above; resultPath null).
+      let outputCopyPath: string | undefined;
+      if (outputDir && resultPath) {
+        fs.mkdirSync(outputDir, { recursive: true });
+        outputCopyPath = path.join(outputDir, "ci-result.json");
+        fs.copyFileSync(resultPath, outputCopyPath);
+      }
+
       if (options.json) {
         console.log(JSON.stringify(result, null, 2));
       } else {
@@ -124,6 +151,9 @@ export function buildCiCommand(): Command {
         }
         if (resultPath) {
           console.log(`\n  CI Result: ${chalk.gray(resultPath)}\n`);
+        }
+        if (outputCopyPath) {
+          console.log(`  Output copy: ${chalk.gray(outputCopyPath)}\n`);
         }
         if (result.status === "all-skipped") {
           console.log(chalk.yellow("  All hunts were skipped by tag filters.\n"));
