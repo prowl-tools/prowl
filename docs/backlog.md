@@ -50,17 +50,6 @@ agreement, create the Developer ID Application cert, create the App Store Connec
 
 ## Low Priority
 
-{PROWL-004} **P2-009: `prowl ci --output` and `--json` Flags**
-   Add `--output <path>` flag to control where `ci-result.json` is written (for CI artifact upload), and `--json` flag for machine-readable stdout output (matching `prowl list --json` pattern).
-
-**Found during**: Code review of P2-001 (2026-02-15)
-**Status**: Partially complete — `--json` done (library-api branch), `--output` deferred
-**Acceptance Criteria**:
-- ~~`prowl ci --json` emits the `CiResult` JSON to stdout instead of the formatted summary~~ ✓
-- ~~Unit tests for `--json`~~ ✓
-- `prowl ci --output ./results/` writes `ci-result.json` to specified directory (deferred)
-- Both flags can be combined (deferred)
-
 {PROWL-005} **P2-007: Slack/Webhook Notifications**
    Post results to external services on hunt failure.
 
