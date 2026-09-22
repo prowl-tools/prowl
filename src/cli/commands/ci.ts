@@ -20,16 +20,84 @@ function parseTagList(value: string | undefined, flag: "--include-tags" | "--exc
   return tags;
 }
 
-// Resolve --output to an absolute directory and validate it up front, before any
-// hunts run. Relative paths are resolved against cwd. A path that exists but is not
-// a directory is a hard error (exit 1) so CI fails fast instead of mid-suite.
+function lstatIfExists(target: string): fs.Stats | null {
+  try {
+    return fs.lstatSync(target);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Allow stable macOS root aliases so --output /tmp and os.tmpdir() paths keep working. */
+function isTrustedPlatformSymlink(target: string): boolean {
+  return process.platform === "darwin" && (target === "/tmp" || target === "/var");
+}
+
+/** Validate every existing component of an absolute --output path without following symlinks. */
+function assertOutputDestinationSafe(outputDir: string): void {
+  const { root } = path.parse(outputDir);
+  const rootStat = lstatIfExists(root);
+  const rootIsTrustedSymlink = rootStat?.isSymbolicLink() && isTrustedPlatformSymlink(root);
+  if (rootStat?.isSymbolicLink() && !rootIsTrustedSymlink) {
+    throw new Error(`--output path contains a symlink: ${root}`);
+  }
+  if (rootStat && !rootIsTrustedSymlink && !rootStat.isDirectory()) {
+    throw new Error(`--output parent path is not a directory: ${root}`);
+  }
+
+  const parts = outputDir.slice(root.length).split(path.sep).filter((part) => part.length > 0);
+  let current = root;
+  for (let index = 0; index < parts.length; index += 1) {
+    current = path.join(current, parts[index] ?? "");
+    const stat = lstatIfExists(current);
+    const isTrustedSymlink = stat?.isSymbolicLink() && isTrustedPlatformSymlink(current);
+    if (stat?.isSymbolicLink() && !isTrustedSymlink) {
+      throw new Error(`--output path contains a symlink: ${current}`);
+    }
+    if (stat && !isTrustedSymlink && !stat.isDirectory()) {
+      const label = index === parts.length - 1 ? "path exists and is not a directory" : "parent path is not a directory";
+      throw new Error(`--output ${label}: ${current}`);
+    }
+  }
+}
+
+/** Resolve --output to an absolute directory and validate it before any hunts run. */
 function resolveOutputDir(output: string | undefined): string | undefined {
   if (output === undefined) return undefined;
   const resolved = path.resolve(output);
-  if (fs.existsSync(resolved) && !fs.statSync(resolved).isDirectory()) {
-    throw new Error(`--output path exists and is not a directory: ${resolved}`);
-  }
+  assertOutputDestinationSafe(resolved);
   return resolved;
+}
+
+/** Copy the canonical ci-result.json to the requested --output directory. */
+function copyCiResultToOutput(outputDir: string, resultPath: string): string {
+  assertOutputDestinationSafe(outputDir);
+
+  try {
+    fs.mkdirSync(outputDir, { recursive: true });
+  } catch (error) {
+    throw new Error(`Failed to create --output directory ${outputDir}: ${errorMessage(error)}`, { cause: error });
+  }
+
+  const outputCopyPath = path.join(outputDir, "ci-result.json");
+  try {
+    fs.copyFileSync(resultPath, outputCopyPath);
+  } catch (error) {
+    throw new Error(
+      `Failed to copy ci-result.json from ${resultPath} to --output destination ${outputCopyPath}: ${errorMessage(error)}`,
+      { cause: error }
+    );
+  }
+
+  return outputCopyPath;
 }
 
 function printFailureDetails(results: CiHuntResult[]): void {
@@ -137,9 +205,7 @@ export function buildCiCommand(): Command {
       // produced no result file (e.g. no-hunts already returned above; resultPath null).
       let outputCopyPath: string | undefined;
       if (outputDir && resultPath) {
-        fs.mkdirSync(outputDir, { recursive: true });
-        outputCopyPath = path.join(outputDir, "ci-result.json");
-        fs.copyFileSync(resultPath, outputCopyPath);
+        outputCopyPath = copyCiResultToOutput(outputDir, resultPath);
       }
 
       if (options.json) {
