@@ -1205,6 +1205,7 @@ prowl list
 # CI mode — run all hunts with aggregate status
 prowl ci
 prowl ci --json                        # Machine-readable CI output
+prowl ci --output ./results            # Also copy ci-result.json here for artifact upload
 prowl ci --parallel 4                 # Run hunts with 4 workers
 prowl ci --fail-fast                   # Stop after the first hunt failure
 
@@ -1217,6 +1218,19 @@ prowl history <hunt-name> --json       # Machine-readable history output
 prowl mcp
 prowl mcp --projects ~/.prowl/projects.yml   # Drive multiple repos via a registry
 ```
+
+`--output <dir>` details:
+- Writes an **additional** copy of `ci-result.json` into `<dir>`, handy for
+  uploading as a CI artifact. The canonical copy under `.prowl/runs/` is still
+  written exactly as before, so run history and tooling are unaffected.
+- Accepts a relative path (resolved against the current directory) or an
+  absolute one, and creates the directory (including parents) if it does not
+  exist.
+- If `<dir>` already exists but is not a directory, the command fails fast with
+  exit `1` before any hunts run.
+- Combine with `--json` to keep machine-readable output on stdout while still
+  dropping the file on disk (stdout stays pure JSON — no extra prose).
+- When no hunts are found, nothing is written (no empty file is created).
 
 `--parallel <count>` details:
 - Runs hunts in parallel with `count` workers.

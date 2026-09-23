@@ -5,6 +5,15 @@ All notable changes to Prowl will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **`prowl ci --output <dir>` (PROWL-004).** Writes an additional copy of
+  `ci-result.json` into the given directory, ready to upload as a CI artifact. The
+  canonical copy under `.prowl/runs/` is written exactly as before, so run history
+  and tooling are unaffected. Accepts a relative path (resolved against the current
+  directory) or an absolute one, and creates the directory recursively if missing;
+  a path that already exists but is not a directory fails fast with exit `1` before
+  any hunts run. Combine with `--json` to keep stdout pure JSON while still dropping
+  the file on disk. Nothing is written when no hunts are found. This completes
+  PROWL-004 — the `--json` half shipped earlier.
 - **Geolocation simulation (PROWL-018).** Test location-dependent web features by
   simulating a device position. Set it for the whole run with the
   `browser.geolocation: { latitude, longitude }` config option (applied at

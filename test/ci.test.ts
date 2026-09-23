@@ -599,6 +599,247 @@ describe("ci command", () => {
     expect(printHuntSummary).not.toHaveBeenCalled();
     expect(resultMascot).not.toHaveBeenCalled();
   });
+
+  it("--output writes a copy of ci-result.json to a relative directory", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-out-rel-"));
+    const configDir = path.join(cwd, ".prowl");
+    fs.mkdirSync(configDir, { recursive: true });
+    const origCwd = process.cwd();
+    process.chdir(cwd);
+    try {
+      mockLoadConfig.mockReturnValue({ config: {}, configDir });
+      mockListHunts.mockReturnValue(["homepage"]);
+      mockRunHunt.mockResolvedValueOnce(makeRunResult("homepage", "pass"));
+
+      const cmd = buildCiCommand();
+      await cmd.parseAsync(["node", "prowl", "--output", "./results"]);
+
+      const copyPath = path.join(cwd, "results", "ci-result.json");
+      expect(fs.existsSync(copyPath)).toBe(true);
+      const parsed: CiResult = JSON.parse(fs.readFileSync(copyPath, "utf-8"));
+      expect(parsed.status).toBe("pass");
+      expect(parsed.totalHunts).toBe(1);
+      // The formatted (non-JSON) run announces where the extra copy landed.
+      const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Output copy:");
+      expect(process.exitCode).toBe(0);
+    } finally {
+      process.chdir(origCwd);
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("--output writes a byte-identical copy to an absolute directory, creating it recursively", async () => {
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-out-abs-"));
+    const outBase = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-out-dest-"));
+    // Nested, not-yet-existing directory to exercise recursive creation.
+    const outputDir = path.join(outBase, "nested", "artifacts");
+    mockLoadConfig.mockReturnValue({ config: {}, configDir });
+    mockListHunts.mockReturnValue(["homepage"]);
+    mockRunHunt.mockResolvedValueOnce(makeRunResult("homepage", "pass"));
+
+    const cmd = buildCiCommand();
+    await cmd.parseAsync(["node", "prowl", "--output", outputDir]);
+
+    const copyPath = path.join(outputDir, "ci-result.json");
+    expect(fs.existsSync(copyPath)).toBe(true);
+
+    // The canonical copy in the run directory must be untouched and byte-identical.
+    const runsDir = path.join(configDir, "runs");
+    const ciDir = fs.readdirSync(runsDir).find((d) => d.startsWith("ci"));
+    const canonical = fs.readFileSync(path.join(runsDir, ciDir!, "ci-result.json"));
+    const copy = fs.readFileSync(copyPath);
+    expect(copy.equals(canonical)).toBe(true);
+    expect(process.exitCode).toBe(0);
+
+    fs.rmSync(configDir, { recursive: true, force: true });
+    fs.rmSync(outBase, { recursive: true, force: true });
+  });
+
+  it("--output fails with exit 1 before running hunts when the path is not a directory", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-out-file-"));
+    const filePath = path.join(tmpDir, "not-a-dir");
+    fs.writeFileSync(filePath, "i am a file");
+    mockLoadConfig.mockReturnValue({ config: {}, configDir: tmpDir });
+    mockListHunts.mockReturnValue(["homepage"]);
+
+    const cmd = buildCiCommand();
+    await expect(
+      cmd.parseAsync(["node", "prowl", "--output", filePath])
+    ).rejects.toThrow("--output path exists and is not a directory");
+
+    // Validation happens up front — no hunts are executed.
+    expect(mockRunHunt).not.toHaveBeenCalled();
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("--output fails before running hunts when a parent path is not a directory", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-out-parent-file-"));
+    const filePath = path.join(tmpDir, "not-a-dir");
+    const outputDir = path.join(filePath, "results");
+    fs.writeFileSync(filePath, "i am a file");
+    mockLoadConfig.mockReturnValue({ config: {}, configDir: tmpDir });
+    mockListHunts.mockReturnValue(["homepage"]);
+
+    try {
+      const cmd = buildCiCommand();
+      await expect(
+        cmd.parseAsync(["node", "prowl", "--output", outputDir])
+      ).rejects.toThrow("--output parent path is not a directory");
+
+      // Validation happens up front — no hunts are executed.
+      expect(mockRunHunt).not.toHaveBeenCalled();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("--output revalidates before copying and rejects symlink parents introduced during the run", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-out-symlink-"));
+    const outputRoot = path.join(tmpDir, "output");
+    const realTarget = path.join(tmpDir, "redirect-target");
+    const linkPath = path.join(outputRoot, "link");
+    const outputDir = path.join(linkPath, "results");
+    fs.mkdirSync(outputRoot);
+    fs.mkdirSync(realTarget);
+    mockLoadConfig.mockReturnValue({ config: {}, configDir: tmpDir });
+    mockListHunts.mockReturnValue(["homepage"]);
+    mockRunHunt.mockImplementationOnce(async () => {
+      fs.symlinkSync(realTarget, linkPath, "dir");
+      return makeRunResult("homepage", "pass");
+    });
+
+    try {
+      const cmd = buildCiCommand();
+      await expect(
+        cmd.parseAsync(["node", "prowl", "--output", outputDir])
+      ).rejects.toThrow(`--output path contains a symlink: ${linkPath}`);
+
+      expect(mockRunHunt).toHaveBeenCalledTimes(1);
+      expect(fs.existsSync(path.join(realTarget, "results", "ci-result.json"))).toBe(false);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("--output reports actionable errors when creating the output directory fails", async () => {
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-out-mkdir-config-"));
+    const outBase = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-out-mkdir-dest-"));
+    const outputDir = path.join(outBase, "nested");
+    const mkdirError = new Error("disk is full");
+    const realMkdirSync = fs.mkdirSync;
+    const mkdirSpy = vi.spyOn(fs, "mkdirSync").mockImplementation((target, options) => {
+      if (String(target) === outputDir) {
+        throw mkdirError;
+      }
+      return realMkdirSync(target, options);
+    });
+    mockLoadConfig.mockReturnValue({ config: {}, configDir });
+    mockListHunts.mockReturnValue(["homepage"]);
+    mockRunHunt.mockResolvedValueOnce(makeRunResult("homepage", "pass"));
+
+    try {
+      const cmd = buildCiCommand();
+      let thrown: unknown;
+      try {
+        await cmd.parseAsync(["node", "prowl", "--output", outputDir]);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(Error);
+      expect((thrown as Error).message).toContain("Failed to create --output directory");
+      expect((thrown as Error).message).toContain(outputDir);
+      expect((thrown as Error).message).toContain("disk is full");
+      expect((thrown as Error & { cause?: unknown }).cause).toBe(mkdirError);
+      expect(mockRunHunt).toHaveBeenCalledTimes(1);
+    } finally {
+      mkdirSpy.mockRestore();
+      fs.rmSync(configDir, { recursive: true, force: true });
+      fs.rmSync(outBase, { recursive: true, force: true });
+    }
+  });
+
+  it("--output reports actionable errors when copying ci-result.json fails", async () => {
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-out-copy-config-"));
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-out-copy-dest-"));
+    const outputCopyPath = path.join(outputDir, "ci-result.json");
+    const copyError = new Error("permission denied");
+    const realCopyFileSync = fs.copyFileSync;
+    const copySpy = vi.spyOn(fs, "copyFileSync").mockImplementation((source, destination, mode) => {
+      if (String(destination) === outputCopyPath) {
+        throw copyError;
+      }
+      realCopyFileSync(source, destination, mode);
+    });
+    mockLoadConfig.mockReturnValue({ config: {}, configDir });
+    mockListHunts.mockReturnValue(["homepage"]);
+    mockRunHunt.mockResolvedValueOnce(makeRunResult("homepage", "pass"));
+
+    try {
+      const cmd = buildCiCommand();
+      let thrown: unknown;
+      try {
+        await cmd.parseAsync(["node", "prowl", "--output", outputDir]);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(Error);
+      expect((thrown as Error).message).toContain("Failed to copy ci-result.json");
+      expect((thrown as Error).message).toContain(outputCopyPath);
+      expect((thrown as Error).message).toContain("permission denied");
+      expect((thrown as Error & { cause?: unknown }).cause).toBe(copyError);
+      expect(mockRunHunt).toHaveBeenCalledTimes(1);
+    } finally {
+      copySpy.mockRestore();
+      fs.rmSync(configDir, { recursive: true, force: true });
+      fs.rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  it("--output combined with --json keeps stdout pure JSON and still writes the copy", async () => {
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-out-json-"));
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-out-json-dest-"));
+    mockLoadConfig.mockReturnValue({ config: {}, configDir });
+    mockListHunts.mockReturnValue(["homepage"]);
+    mockRunHunt.mockResolvedValueOnce(makeRunResult("homepage", "pass"));
+
+    const cmd = buildCiCommand();
+    await cmd.parseAsync(["node", "prowl", "--output", outputDir, "--json"]);
+
+    // Every stdout line must be valid JSON — no "Output copy:" prose leaks in.
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    const line = logSpy.mock.calls[0][0] as string;
+    expect(() => JSON.parse(line)).not.toThrow();
+    expect(line).not.toContain("Output copy");
+    const parsed: CiResult = JSON.parse(line);
+    expect(parsed.status).toBe("pass");
+
+    // The copy is still written.
+    expect(fs.existsSync(path.join(outputDir, "ci-result.json"))).toBe(true);
+
+    fs.rmSync(configDir, { recursive: true, force: true });
+    fs.rmSync(outputDir, { recursive: true, force: true });
+  });
+
+  it("--output writes nothing when there are no hunts", async () => {
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-out-nohunts-"));
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "prowl-out-nohunts-dest-"));
+    mockLoadConfig.mockReturnValue({ config: {}, configDir });
+    mockListHunts.mockReturnValue([]);
+
+    const cmd = buildCiCommand();
+    await cmd.parseAsync(["node", "prowl", "--output", outputDir]);
+
+    expect(mockRunHunt).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(outputDir, "ci-result.json"))).toBe(false);
+    expect(process.exitCode).toBe(2);
+
+    fs.rmSync(configDir, { recursive: true, force: true });
+    fs.rmSync(outputDir, { recursive: true, force: true });
+  });
 });
 
 describe("countCiResults", () => {
